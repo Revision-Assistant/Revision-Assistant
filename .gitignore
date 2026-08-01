@@ -1,0 +1,62 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.*
+!.env.example
+.netlify
+
+# Private manuscripts / Turnitin reports — NEVER ship online
+test/
+public/samples/**
+!public/samples/.gitkeep
+
+# Local training artifacts — regenerable from prepare_data.py + train_scibert.py;
+# checkpoints exceed GitHub's 100MB file limit anyway
+training/local/raw_train.jsonl
+training/local/*.jsonl
+training/local/out/
+training/local/best/
+training/local/train_log.txt
+training/local/citation_need_onnx/
+training/local/rewrite_data/
+training/local/rewrite_out/
+training/local/rewrite_best/
+training/local/*_raw.jsonl
+
+# Declined feature (auto-rewrite/paraphrase-to-evade-detection) — not part of this project
+training/local/entity_guard.py
+training/local/eval_test_folder.py
+training/local/eval_test_pipeline.py
+training/local/eval_with_grok.py
+training/local/filter_rewrite_data.py
+training/local/llm_client.py
+training/local/prepare_rewrite_data.py
+training/local/run_iteration.py
+training/local/solve_local.py
+training/local/train_rewrite.py
+scripts/eval_test_folder.ts
+
+# Quantized ONNX weights — host on Hugging Face for production
+public/models/citation-need/onnx/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

@@ -1,0 +1,10 @@
+{
+  "threshold": 0.3,
+  "base_model": "allenai/scibert_scivocab_uncased",
+  "max_len": 96,
+  "test_precision": 0.8766540642722117,
+  "test_recall": 0.9256487025948104,
+  "test_f1": 0.9004854368932039,
+  "test_roc_auc": 0.9671912437649751,
+  "n_train": 32000
+}

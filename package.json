@@ -1,0 +1,38 @@
+{
+  "name": "revision-assistant",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "test:unit": "tsx src/lib/pdf/fingerprint.test.ts && tsx src/lib/alignment/fuzzyMatch.test.ts && tsx src/lib/categorize/rules.test.ts && tsx src/lib/citation/guard.test.ts && tsx src/lib/pdf/paperParser.test.ts && tsx src/lib/grammar/languageTool.test.ts && tsx src/lib/pdf/badgeReport.test.ts && tsx src/lib/citation/citationNeed.test.ts",
+    "test:folder": "tsx scripts/eval_test_folder.ts",
+    "netlify:dev": "netlify dev"
+  },
+  "dependencies": {
+    "@citation-js/plugin-csl": "^0.7.21",
+    "@huggingface/transformers": "^4.2.0",
+    "@supabase/supabase-js": "^2.90.1",
+    "citation-js": "^0.7.21",
+    "fuse.js": "^7.1.0",
+    "mammoth": "^1.12.0",
+    "pdfjs-dist": "^5.4.296",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^5.1.2",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "netlify-cli": "^23.13.0",
+    "oxlint": "^1.75.0",
+    "tsx": "^4.23.1",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.0"
+  }
+}
