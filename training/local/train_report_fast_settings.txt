@@ -1,0 +1,10 @@
+﻿FAST TRAIN SETTINGS (2026-08-02T08:59:47.7722812+05:30)
+- per_device_train_batch_size=4 (was 2)
+- gradient_accumulation_steps=4 (was 8) -> effective batch still 16
+- per_device_eval_batch_size=8 (was 4)
+- fp16=False, bf16=True (unchanged; fp16 NaN risk)
+- dataloader_num_workers=0 (Windows-safe)
+- dataloader_pin_memory=True when CUDA
+- report_plag: epochs=1, max-train=5500 (of 64000; not full 2-epoch 64k)
+- report_ai: epochs=2, max-train=4000 (of 4798)
+- Target ~20 min wall for both at ~1.0-1.5 s/it

@@ -15,14 +15,26 @@ export interface ExtractedDocx {
 }
 
 export async function extractTextFromDocx(data: ArrayBuffer): Promise<ExtractedDocx> {
-  // mammoth's Node build wants `{ buffer }`; browsers use `{ arrayBuffer }`.
   let result: { value: string };
-  if (typeof window === 'undefined' && typeof Buffer !== 'undefined') {
-    result = await mammoth.extractRawText({ buffer: Buffer.from(data) });
-  } else {
-    result = await mammoth.extractRawText({ arrayBuffer: data });
+  try {
+    // mammoth's Node build wants `{ buffer }`; browsers use `{ arrayBuffer }`.
+    if (typeof window === 'undefined' && typeof Buffer !== 'undefined') {
+      result = await mammoth.extractRawText({ buffer: Buffer.from(data) });
+    } else {
+      result = await mammoth.extractRawText({ arrayBuffer: data });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Could not read this Word file (${msg}). Re-save as .docx (not .doc), remove password protection, and try again.`
+    );
   }
   const text = normalizePdfText(result.value);
+  if (!text.trim()) {
+    throw new Error(
+      'This Word file has no extractable text (it may be image-only or empty). Paste content into a new .docx or upload a text PDF.'
+    );
+  }
 
   // No real pagination available for docx — treat the whole document as one page.
   const page: PageText = { pageNumber: 1, text, startOffset: 0, endOffset: text.length };

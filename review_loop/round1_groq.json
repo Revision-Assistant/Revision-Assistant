@@ -1,0 +1,171 @@
+{
+  "ok": true,
+  "model": "llama-3.3-70b-versatile",
+  "parsed": {
+    "auditor_issues": [
+      {
+        "issue": "File upload size limits not clearly communicated",
+        "screen": "upload",
+        "severity": "medium",
+        "why": "The upload size limits are defined in the code but not clearly displayed to the user on the upload screen.",
+        "fix": "Add a tooltip or a hint next to the file upload slots to display the maximum allowed file size (e.g., 'Max file size: 10MB')"
+      },
+      {
+        "issue": "No clear indication of required file types",
+        "screen": "upload",
+        "severity": "medium",
+        "why": "The code checks for specific file extensions, but this is not clearly communicated to the user.",
+        "fix": "Add a hint or a tooltip next to each file upload slot to indicate the accepted file types (e.g., 'PDF or DOCX only')"
+      },
+      {
+        "issue": "Color scheme and contrast",
+        "screen": "global",
+        "severity": "low",
+        "why": "The use of sage/forest greens and serif font may cause readability issues for some users, especially in certain lighting conditions.",
+        "fix": "Consider adding a high contrast mode or a theme switcher to improve readability for users with visual impairments"
+      },
+      {
+        "issue": "No clear hierarchy in the findings queue",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "The findings queue displays a large number of items with different severity levels, but the hierarchy is not clearly defined.",
+        "fix": "Use a clear and consistent visual hierarchy (e.g., size, color, indentation) to differentiate between high, medium, and low severity findings"
+      },
+      {
+        "issue": "No clear indication of what 'Apply all fixes' does",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "The 'Apply all fixes' button is not clearly explained, which may cause users to hesitate or misunderstand its purpose.",
+        "fix": "Add a tooltip or a brief description next to the 'Apply all fixes' button to explain its functionality (e.g., 'Applies all suggested fixes to the manuscript')"
+      },
+      {
+        "issue": "No clear indication of what 'Start over' does",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "The 'Start over' button is not clearly explained, which may cause users to hesitate or misunderstand its purpose.",
+        "fix": "Add a tooltip or a brief description next to the 'Start over' button to explain its functionality (e.g., 'Resets all changes and restarts the analysis')"
+      },
+      {
+        "issue": "No clear indication of what 'Export' options do",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "The export options are not clearly explained, which may cause users to hesitate or misunderstand their purpose.",
+        "fix": "Add a tooltip or a brief description next to each export option to explain its functionality (e.g., 'Exports the manuscript as a watermarked PDF')"
+      },
+      {
+        "issue": "No clear indication of what 'Journal readiness' tab does",
+        "screen": "journal",
+        "severity": "medium",
+        "why": "The 'Journal readiness' tab is not clearly explained, which may cause users to hesitate or misunderstand its purpose.",
+        "fix": "Add a brief description or a tooltip next to the 'Journal readiness' tab to explain its functionality (e.g., 'Evaluates the manuscript's readiness for journal submission')"
+      },
+      {
+        "issue": "No clear indication of what the scores in the 'Journal readiness' tab represent",
+        "screen": "journal",
+        "severity": "medium",
+        "why": "The scores in the 'Journal readiness' tab are not clearly explained, which may cause users to misunderstand their meaning.",
+        "fix": "Add a tooltip or a brief description next to each score to explain its meaning (e.g., 'Q1-like score: indicates the manuscript's potential impact factor')"
+      },
+      {
+        "issue": "No clear indication of what the 'What to correct' gaps represent",
+        "screen": "journal",
+        "severity": "medium",
+        "why": "The 'What to correct' gaps are not clearly explained, which may cause users to misunderstand their meaning.",
+        "fix": "Add a tooltip or a brief description next to the 'What to correct' gaps to explain their meaning (e.g., 'Indicates areas that require improvement for journal submission')"
+      },
+      {
+        "issue": "No clear indication of what the suggested venues represent",
+        "screen": "journal",
+        "severity": "medium",
+        "why": "The suggested venues are not clearly explained, which may cause users to misunderstand their meaning.",
+        "fix": "Add a tooltip or a brief description next to the suggested venues to explain their meaning (e.g., 'Suggested journals that may be a good fit for the manuscript based on its content and impact factor')"
+      },
+      {
+        "issue": "No clear indication of what the 'Draft all AI flags' button does",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "The 'Draft all AI flags' button is not clearly explained, which may cause users to hesitate or misunderstand its purpose.",
+        "fix": "Add a tooltip or a brief description next to the 'Draft all AI flags' button to explain its functionality (e.g., 'Generates a draft rewrite for all AI-flagged sections')"
+      }
+    ],
+    "first_time_user_confusions": [
+      {
+        "issue": "What is the purpose of the 'Analyze' button?",
+        "screen": "upload",
+        "severity": "high",
+        "why": "I'm not sure what the 'Analyze' button does or what to expect after clicking it.",
+        "fix": "Add a brief description or a tooltip next to the 'Analyze' button to explain its functionality (e.g., 'Starts the analysis process to identify potential issues in the manuscript')"
+      },
+      {
+        "issue": "What do the different colors in the 'PaperView' represent?",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "I see different colored highlights in the 'PaperView', but I'm not sure what they mean.",
+        "fix": "Add a legend or a tooltip to explain the meaning of each color (e.g., 'Red: indicates a high-severity finding, Yellow: indicates a medium-severity finding')"
+      },
+      {
+        "issue": "How do I know which findings to prioritize?",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "I see a long list of findings, but I'm not sure which ones to address first.",
+        "fix": "Use a clear and consistent visual hierarchy (e.g., size, color, indentation) to differentiate between high, medium, and low severity findings"
+      },
+      {
+        "issue": "What is the purpose of the 'Journal readiness' tab?",
+        "screen": "journal",
+        "severity": "medium",
+        "why": "I'm not sure what the 'Journal readiness' tab does or what to expect from it.",
+        "fix": "Add a brief description or a tooltip next to the 'Journal readiness' tab to explain its functionality (e.g., 'Evaluates the manuscript's readiness for journal submission')"
+      },
+      {
+        "issue": "How do I export my results?",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "I want to export my results, but I'm not sure which option to choose.",
+        "fix": "Add a tooltip or a brief description next to each export option to explain its functionality (e.g., 'Exports the manuscript as a watermarked PDF')"
+      },
+      {
+        "issue": "What does the 'Fix & next' button do?",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "I'm not sure what the 'Fix & next' button does or what to expect after clicking it.",
+        "fix": "Add a tooltip or a brief description next to the 'Fix & next' button to explain its functionality (e.g., 'Applies the suggested fix and moves to the next finding')"
+      },
+      {
+        "issue": "How do I know when I've addressed all the findings?",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "I've been working through the findings, but I'm not sure when I've addressed all of them.",
+        "fix": "Add a progress bar or a completion indicator to show the user how many findings they've addressed and how many are remaining"
+      },
+      {
+        "issue": "What is the purpose of the 'Draft rewrite' option?",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "I see a 'Draft rewrite' option, but I'm not sure what it does or when to use it.",
+        "fix": "Add a tooltip or a brief description next to the 'Draft rewrite' option to explain its functionality (e.g., 'Generates a draft rewrite for the selected finding')"
+      },
+      {
+        "issue": "How do I know which citation style to choose?",
+        "screen": "workspace",
+        "severity": "low",
+        "why": "I see a list of citation styles, but I'm not sure which one to choose.",
+        "fix": "Add a tooltip or a brief description next to the citation style options to explain their differences (e.g., 'APA: commonly used in social sciences, MLA: commonly used in humanities')"
+      },
+      {
+        "issue": "What is the purpose of the 'Humanize' bar?",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "I see a 'Humanize' bar, but I'm not sure what it does or when to use it.",
+        "fix": "Add a tooltip or a brief description next to the 'Humanize' bar to explain its functionality (e.g., 'Generates a humanized version of the selected text')"
+      },
+      {
+        "issue": "How do I know when my manuscript is ready for submission?",
+        "screen": "journal",
+        "severity": "high",
+        "why": "I've addressed all the findings, but I'm not sure if my manuscript is ready for submission.",
+        "fix": "Add a clear indication of readiness (e.g., a green checkmark or a 'Ready for submission' message) when the manuscript has addressed all the findings and meets the journal's requirements"
+      }
+    ]
+  }
+}

@@ -128,7 +128,7 @@ function buildFinding(s: Sentence, paper: ParsedPaper, confidence: number, why: 
     sourceType: null,
     explanation:
       `This sentence ${why}, but no citation appears nearby. ` +
-      'Turnitin will not flag this — it only reports text overlapping an indexed source — yet reviewers commonly ask for attribution here.',
+      'A similarity checker will not flag this — it only reports text overlapping an indexed source — yet reviewers commonly ask for attribution here.',
     suggestion:
       'Cite the specific work this claim rests on. If it is your own finding, make that explicit ("our results show…"); if it is genuinely common knowledge in your field, it can stand as-is.',
     status: 'open',
@@ -147,8 +147,8 @@ export function detectCitationNeed(
   paper: ParsedPaper,
   options: CitationNeedOptions = {}
 ): Finding[] {
-  const threshold = options.threshold ?? 0.7;
-  const maxFindings = options.maxFindings ?? 40;
+  const threshold = options.threshold ?? 0.78;
+  const maxFindings = options.maxFindings ?? 20;
   const out: Finding[] = [];
 
   for (const s of paper.sentences) {

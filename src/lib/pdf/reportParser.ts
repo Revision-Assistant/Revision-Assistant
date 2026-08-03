@@ -12,7 +12,7 @@ import type {
   SimilarityReport,
   TurnitinSourceType,
 } from '../../types';
-import { extractPositionedPages, extractTextFromPdf } from './extractText';
+import { extractPdfBundle, extractTextFromPdf } from './extractText';
 import { normalizeForMatch } from './textUtils';
 import {
   badgesToFlags,
@@ -246,7 +246,10 @@ export async function parseSimilarityReport(
   data: ArrayBuffer,
   paper?: ParsedPaper | null
 ): Promise<SimilarityReport> {
-  const { fullText } = await extractTextFromPdf(data);
+  // One open for text + positions — large Turnitin PDFs used to OOM from a double parse.
+  const { fullText, positioned, truncated } = await extractPdfBundle(data, {
+    needPositioned: true,
+  });
   const fp = fingerprintReport(fullText, 'similarity');
   if (!fp.ok) throw new UnsupportedReportFormatError(fp);
 
@@ -255,13 +258,14 @@ export async function parseSimilarityReport(
   // Preferred path: Turnitin's standard export rasterizes the document body and leaves
   // only numeric match badges as text, so positions — not scraped prose — carry the
   // signal. Requires the author's paper to map badges onto real offsets.
-  const positioned = await extractPositionedPages(data);
   const originalityStart = findOriginalityStart(positioned);
 
   if (paper && isBadgeStyleReport(positioned, originalityStart)) {
     const sourceMap = parseSourceList(positioned, originalityStart);
     const badges = extractBadges(positioned, originalityStart);
-    const bodyPageCount = (originalityStart > 0 ? originalityStart - 1 : positioned.length) - 1;
+    const lastPosPage = positioned.reduce((m, p) => Math.max(m, p.pageNumber), 0);
+    const bodyPageCount =
+      (originalityStart > 0 ? originalityStart - 1 : lastPosPage) - 1;
     const flags = badgesToFlags(badges, sourceMap, paper, bodyPageCount);
 
     if (flags.length > 0) {
@@ -269,7 +273,7 @@ export async function parseSimilarityReport(
         overallPct,
         flags,
         sources: [...sourceMap.values()].sort((a, b) => b.percentage - a.percentage),
-        formatVersion: `${fp.formatVersion}-badge`,
+        formatVersion: `${fp.formatVersion}-badge${truncated ? '-truncated' : ''}`,
         rawText: fullText,
       };
     }
@@ -283,7 +287,7 @@ export async function parseSimilarityReport(
     overallPct,
     flags,
     sources,
-    formatVersion: fp.formatVersion,
+    formatVersion: `${fp.formatVersion}${truncated ? '-truncated' : ''}`,
     rawText: fullText,
   };
 }

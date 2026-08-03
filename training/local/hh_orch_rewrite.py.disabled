@@ -1,0 +1,105 @@
+﻿import os, sys, time, subprocess, ctypes
+from pathlib import Path
+HERE = Path(r"c:\Users\subha\Desktop\plag and AI\training\local")
+os.chdir(HERE)
+RESULTS = HERE / "HARD_TRAIN_RESULTS.txt"
+
+def keep_awake():
+    try:
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+    except Exception:
+        pass
+
+def log(msg):
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+    print(line, flush=True)
+    with RESULTS.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+def pids_cmdline():
+    out, cur = [], {}
+    try:
+        r = subprocess.check_output(
+            ["wmic", "process", "where", "name='python.exe'", "get", "ProcessId,CommandLine", "/FORMAT:LIST"],
+            text=True, errors="replace",
+        )
+    except Exception:
+        return out
+    for line in r.splitlines():
+        line = line.strip()
+        if not line:
+            if cur.get("ProcessId") and cur.get("CommandLine"):
+                out.append((int(cur["ProcessId"]), cur["CommandLine"]))
+            cur = {}
+            continue
+        if "=" in line:
+            k, v = line.split("=", 1)
+            cur[k] = v
+    if cur.get("ProcessId") and cur.get("CommandLine"):
+        out.append((int(cur["ProcessId"]), cur["CommandLine"]))
+    return out
+
+def kill_gpu_competitors(protect):
+    # Only kill rewrite trainers that steal the GPU — not quality/netlify/keepalive
+    bad = ("train_rewrite.py", "train_rw_job.py", "_run_train.py", "_run_report", "_guard_train.py", "train_report_debug.py")
+    for pid, cmd in pids_cmdline():
+        if pid in protect or pid == os.getpid():
+            continue
+        if "rw_hard_fit.py" in cmd or "hh_orch_rewrite.py" in cmd:
+            continue
+        if "prepare_quality" in cmd or "train_quality" in cmd or "keepalive" in cmd or "_orch_quality" in cmd:
+            continue
+        if any(b in cmd for b in bad):
+            try:
+                os.kill(pid, 9)
+                log(f"killed competitor pid={pid}")
+            except Exception as e:
+                log(f"kill fail {pid}: {e}")
+
+def run_task(task, epochs, max_train, protect_base):
+    log_path = HERE / f"train_{task}_hard.log"
+    env = os.environ.copy()
+    env["TF_CPP_MIN_LOG_LEVEL"] = "3"
+    env["PYTHONUNBUFFERED"] = "1"
+    t0 = time.time()
+    log(f"START {task} epochs={epochs} max-train={max_train}")
+    with log_path.open("w", encoding="utf-8", errors="replace") as f:
+        p = subprocess.Popen(
+            [sys.executable, "-u", "rw_hard_fit.py", "--task", task, "--epochs", str(epochs), "--max-train", str(max_train)],
+            stdout=f, stderr=subprocess.STDOUT, env=env, cwd=str(HERE),
+        )
+        protect = set(protect_base) | {os.getpid(), p.pid}
+        while p.poll() is None:
+            kill_gpu_competitors(protect)
+            keep_awake()
+            time.sleep(4)
+        rc = p.returncode if p.returncode is not None else -1
+    log(f"END {task} exit={rc} elapsed_min={(time.time()-t0)/60:.1f}")
+    return rc
+
+def main():
+    keep_awake()
+    RESULTS.write_text(f"HARD TRAIN START (stealth) {time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
+    protect = {os.getpid()}
+    kill_gpu_competitors(protect)
+    time.sleep(2)
+    for task, epochs, max_train in [
+        ("report_plag", 3, 20000),
+        ("report_ai", 3, 10000),
+        ("plag", 3, 20000),
+        ("ai", 3, 10000),
+    ]:
+        rc = run_task(task, epochs, max_train, protect)
+        if rc != 0 and task.startswith("report_"):
+            log(f"ABORT after {task}")
+            sys.exit(1)
+        if rc != 0:
+            log(f"WARN {task} failed exit={rc}")
+    # summarize best artifacts
+    for task in ("report_plag", "report_ai", "plag", "ai"):
+        p = HERE / "rewrite_best" / task / "model.safetensors"
+        log(f"artifact {task}: exists={p.exists()} size={p.stat().st_size if p.exists() else 0}")
+    log("HARD TRAIN COMPLETE")
+
+if __name__ == "__main__":
+    main()

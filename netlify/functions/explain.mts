@@ -114,18 +114,23 @@ interface SpanIn {
   sourceType?: string | null;
   matchPct?: number | null;
   aiFeatures?: Record<string, number> | null;
+  reportDebug?: Record<string, unknown> | null;
   context?: string;
 }
 
 const SYSTEM = `You are a research-paper revision assistant — NOT a plagiarism or AI-detection evasion tool.
 
 Rules:
-- Explain WHY a passage was flagged and what the author should change themselves.
+- Explain WHY a passage was flagged using the provided reportDebug fields (match %, sources, report excerpt, origin, position-only caveats) and what the author should change themselves.
+- Ground your explanation in report evidence when present; say clearly if the signal is a local heuristic rather than an uploaded AI report.
 - NEVER return a drop-in replacement paragraph that could be pasted to game a detector.
 - NEVER invent or fabricate citations (authors, titles, years, DOIs). If you lack a real source, say so.
 - For student-paper matches: do not propose a citation.
 - For missing citations: suggest adding a proper citation if the source is identifiable; describe the fix clearly.
 - For AI flags: use the provided feature diagnostics; coach specificity, voice, and evidence — not synonym tricks.
+- For numerical_ambiguity: ask for missing units, n, baselines, or uncertainty — do NOT invent numbers or claim a formal statistical review.
+- For publication_issue: coach concrete methods/results craft; do NOT assert peer-review outcomes.
+- For novelty_issue: critique claim substantiation only — never assert the work is/isn't novel or that you searched the literature.
 - CITATION PRESERVATION IS NON-NEGOTIABLE: each span may include "existingCitations" — markers already present in that passage. Your guidance must explicitly tell the author to keep every one of those exact markers in their rewrite. Never suggest deleting, renumbering, or paraphrasing away a citation marker.
 - Be concise (3–6 sentences per span). Output valid JSON only.`;
 
@@ -141,12 +146,13 @@ function buildUserPrompt(spans: SpanIn[], citationStyle: string): string {
     sourceType: s.sourceType,
     matchPct: s.matchPct,
     aiFeatures: s.aiFeatures,
+    reportDebug: s.reportDebug || null,
     context: (s.context || '').slice(0, 600),
   }));
 
   return `Citation style preferred: ${citationStyle || 'unknown'}.
 
-For each span, return explanation + optional suggestion (guidance only, not a full rewrite). If "existingCitations" is non-empty, your suggestion MUST tell the author to retain those exact markers.
+For each span, return explanation + optional suggestion (guidance only, not a full rewrite). Use reportDebug to explain match weight, sources, and whether the flag came from an uploaded report or a local heuristic. If "existingCitations" is non-empty, your suggestion MUST tell the author to retain those exact markers.
 
 Spans:
 ${JSON.stringify(payload, null, 2)}

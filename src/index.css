@@ -10,5 +10,10 @@ body {
 }
 
 ::selection {
-  background: rgba(15, 76, 92, 0.18);
+  background: rgba(23, 99, 71, 0.18);
+}
+
+:focus-visible {
+  outline: 2px solid rgba(23, 99, 71, 0.45);
+  outline-offset: 2px;
 }

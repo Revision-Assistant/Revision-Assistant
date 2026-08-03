@@ -5,6 +5,7 @@ small batch + gradient accumulation + fp16, rather than Kaggle's T4 defaults.
 Usage: python train_scibert.py
 """
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -29,13 +30,22 @@ HERE = Path(__file__).parent
 MODEL_NAME = "allenai/scibert_scivocab_uncased"
 MAX_LEN = 96
 SEED = 42
+# Laptop 3050: full 160k × 2 epochs ≈ 5+ h; cap keeps hard-mined quality while finishing sooner.
+# Override: python train_scibert.py 80000
+MAX_TRAIN = int(sys.argv[1]) if len(sys.argv) > 1 else 48_000
 
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 
 
 def load(name: str) -> list[dict]:
-    return [json.loads(l) for l in open(HERE / f"{name}.jsonl", encoding="utf-8")]
+    rows = [json.loads(l) for l in open(HERE / f"{name}.jsonl", encoding="utf-8")]
+    if name == "train" and MAX_TRAIN and len(rows) > MAX_TRAIN:
+        rng = np.random.default_rng(SEED)
+        idx = rng.choice(len(rows), size=MAX_TRAIN, replace=False)
+        rows = [rows[i] for i in sorted(idx.tolist())]
+        print(f"train capped at {MAX_TRAIN} (hard-mined pool was larger)")
+    return rows
 
 
 def main() -> None:
@@ -103,14 +113,24 @@ def main() -> None:
     val_p = probs(ds_val)
     val_y = np.array([r["label"] for r in val_rows])
 
-    TARGET_PRECISION = 0.85
+    # Precision-first: prior 160k run hit P≥0.85 already at t=0.30, which flooded the UI.
+    # Aim higher and never ship a threshold below 0.55 even if val P looks fine at 0.30.
+    TARGET_PRECISION = 0.90
+    MIN_THRESHOLD = 0.55
     best = None
-    for t in np.arange(0.30, 0.96, 0.01):
+    for t in np.arange(MIN_THRESHOLD, 0.96, 0.01):
         pred = (val_p >= t).astype(int)
         p, r, _, _ = precision_recall_fscore_support(val_y, pred, average="binary", zero_division=0)
         if p >= TARGET_PRECISION and (best is None or r > best[2]):
             best = (float(t), float(p), float(r))
-    threshold = best[0] if best else 0.5
+    if best is None:
+        # Fall back to the highest-precision threshold ≥ MIN_THRESHOLD
+        for t in np.arange(MIN_THRESHOLD, 0.96, 0.01):
+            pred = (val_p >= t).astype(int)
+            p, r, _, _ = precision_recall_fscore_support(val_y, pred, average="binary", zero_division=0)
+            if best is None or p > best[1] or (p == best[1] and r > best[2]):
+                best = (float(t), float(p), float(r))
+    threshold = best[0] if best else MIN_THRESHOLD
     print("chosen threshold (on val):", best)
 
     test_p = probs(ds_test)

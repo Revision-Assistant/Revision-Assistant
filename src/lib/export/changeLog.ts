@@ -25,21 +25,81 @@ export function buildChangeLog(findings: Finding[]): ChangeLogEntry[] {
 
 /** Apply accepted edits into paper text (simple offset-based, descending) */
 export function applyAcceptedEdits(paper: ParsedPaper, findings: Finding[]): string {
+  return applyAcceptedEditsDetailed(paper, findings).text;
+}
+
+export interface AppliedEditSpan {
+  findingId: string;
+  start: number;
+  end: number;
+  page: number;
+}
+
+/** Revised text plus mapped spans for each applied edit (for clickable revised view). */
+export function applyAcceptedEditsDetailed(
+  paper: ParsedPaper,
+  findings: Finding[]
+): { text: string; applied: AppliedEditSpan[] } {
   const edits = findings
     .filter(
       (f) =>
         (f.status === 'accepted' || f.status === 'edited') &&
         f.editedText != null &&
         f.startOffset >= 0 &&
-        f.endOffset > f.startOffset
+        f.endOffset > f.startOffset &&
+        f.endOffset <= paper.fullText.length
     )
-    .sort((a, b) => b.startOffset - a.startOffset);
+    .sort((a, b) => a.startOffset - b.startOffset);
 
-  let text = paper.fullText;
+  // Apply ascending with a running delta so each recorded span is exact in the
+  // final string even when earlier replacements change the text length.
+  const parts: string[] = [];
+  const applied: AppliedEditSpan[] = [];
+  let cursor = 0;
+  let delta = 0;
   for (const e of edits) {
-    text = text.slice(0, e.startOffset) + e.editedText + text.slice(e.endOffset);
+    if (e.startOffset < cursor) continue; // skip overlapping edits
+    const replacement = e.editedText!;
+    parts.push(paper.fullText.slice(cursor, e.startOffset));
+    parts.push(replacement);
+    const start = e.startOffset + delta;
+    applied.push({
+      findingId: e.id,
+      start,
+      end: start + replacement.length,
+      page: e.page,
+    });
+    delta += replacement.length - (e.endOffset - e.startOffset);
+    cursor = e.endOffset;
   }
-  return text;
+  parts.push(paper.fullText.slice(cursor));
+  return { text: parts.join(''), applied };
+}
+
+/** Safe bulk-apply: every open finding with replacementText that keeps citations. */
+export function applyAllSafeReplacements(findings: Finding[]): {
+  next: Finding[];
+  applied: number;
+  skipped: number;
+} {
+  let applied = 0;
+  let skipped = 0;
+  const next = findings.map((f) => {
+    if (f.status !== 'open' || !f.replacementText) return f;
+    const integrity = checkCitationIntegrity(f.text, f.replacementText);
+    if (!integrity.ok) {
+      skipped += 1;
+      return f;
+    }
+    applied += 1;
+    return {
+      ...f,
+      status: 'accepted' as const,
+      editedText: f.replacementText,
+      citationWarning: false,
+    };
+  });
+  return { next, applied, skipped };
 }
 
 export function formatChangeLogMarkdown(
@@ -53,8 +113,8 @@ export function formatChangeLogMarkdown(
     `# Revision change log: ${title}`,
     '',
     `Generated: ${new Date().toISOString()}`,
-    `Turnitin similarity: ${meta.similarityPct ?? 'n/a'}%`,
-    `Turnitin AI: ${meta.aiPct ?? 'n/a'}%`,
+    `Similarity index: ${meta.similarityPct ?? 'n/a'}%`,
+    `AI writing index: ${meta.aiPct ?? 'n/a'}%`,
     '',
     `## Summary`,
     '',
@@ -112,7 +172,7 @@ export function formatChangeLogMarkdown(
   lines.push('---');
   lines.push('');
   lines.push(
-    '_This log was produced by a revision assistant. It does not guarantee a particular Turnitin score. All wording decisions remain the author\'s responsibility._'
+    '_This log was produced by a revision assistant. It does not guarantee a particular similarity score. All wording decisions remain the author\'s responsibility._'
   );
 
   return lines.join('\n');
@@ -125,7 +185,8 @@ export function downloadText(filename: string, content: string, mime = 'text/pla
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  // Revoke on a delay — revoking synchronously can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 export function exportRevisionPackage(
@@ -138,5 +199,8 @@ export function exportRevisionPackage(
   const log = formatChangeLogMarkdown(title, findings, meta);
   const safe = title.replace(/[^\w\-]+/g, '_').slice(0, 40) || 'paper';
   downloadText(`${safe}_revised.txt`, revised);
-  downloadText(`${safe}_changelog.md`, log, 'text/markdown');
+  // Browsers often block a second synchronous download in the same tick.
+  window.setTimeout(() => {
+    downloadText(`${safe}_changelog.md`, log, 'text/markdown');
+  }, 350);
 }

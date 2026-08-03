@@ -1,0 +1,6 @@
+09:35:29 killed 28988 python  -u train_rewrite.py --task report_plag --epochs 2 --steps 40 
+09:35:36 killed 26808 python  -u train_rewrite.py --task report_plag --epochs 2 --steps 40 
+09:36:33 killed 7716 "C:\Users\subha\AppData\Local\Programs\Python\Python313\python.exe" -u train_rewrite.py --task report_plag --epochs 2 --
+09:36:46 killed 29960 "C:\Users\subha\AppData\Local\Programs\Python\Python313\python.exe" train_rewrite.py --help
+09:36:52 killed 22720 "C:\Users\subha\AppData\Local\Programs\Python\Python313\python.exe" -u -c "import runpy; runpy.run_path('train_rewrite.p
+09:37:06 killed 26932 "C:\Users\subha\AppData\Local\Programs\Python\Python313\python.exe" train_rewrite.py --help

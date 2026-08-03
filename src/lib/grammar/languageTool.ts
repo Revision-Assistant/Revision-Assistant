@@ -8,7 +8,7 @@
  * text attached so the UI can offer a one-click "apply this correction".
  */
 
-import type { Finding, ParsedPaper } from '../../types';
+import type { Finding, ParsedPaper, PaperSentence } from '../../types';
 import { offsetToPage } from '../pdf/textUtils';
 import { isInsideQuotes } from '../categorize/rules';
 
@@ -119,6 +119,52 @@ function occursMultipleTimes(word: string, fullText: string): boolean {
   return (matches?.length ?? 0) >= 2;
 }
 
+/**
+ * Register/dialect/redundancy/style noise — dropped entirely (not even informational).
+ * Academic PDFs flood LanguageTool with "utilized→used", British/American swaps, and
+ * Wikipedia style tips that read as wrong findings in the UI. Keep only agreement,
+ * grammar, and genuine spelling mistakes.
+ */
+const DROP_CATEGORIES = new Set([
+  'STYLE',
+  'REDUNDANCY',
+  'COLLOQUIALISMS',
+  'BRITISH_ENGLISH',
+  'AMERICAN_ENGLISH_STYLE',
+  'PLAIN_ENGLISH',
+  'WIKIPEDIA',
+  'NONSTANDARD_PHRASES',
+  'CASING',
+  'TYPOGRAPHY',
+  'PUNCTUATION',
+  'CONFUSED_WORDS',
+]);
+
+/**
+ * Categories where the flagged token itself *is* the whole issue (a misspelled word, a
+ * stray typo) — expanding these to the enclosing sentence would bury the exact fix under
+ * unrelated prose and break the one-click "apply" (which replaces the flagged span verbatim).
+ */
+function isWordLevelIssue(categoryId: string, ruleId: string): boolean {
+  return SPELLING_CATEGORIES.has(categoryId) || /MORFOLOGIK/i.test(ruleId);
+}
+
+/** Sentence fully containing [start, end), if any. */
+function findEnclosingSentence(
+  sentences: PaperSentence[],
+  start: number,
+  end: number
+): PaperSentence | null {
+  for (const s of sentences) {
+    if (s.startOffset <= start && end <= s.endOffset) return s;
+    if (s.startOffset > end) break; // sentences are offset-ordered; no later one can match
+  }
+  return null;
+}
+
+/** Cap how large a sentence-expanded finding can get, so one bad clause doesn't swallow a paragraph. */
+const MAX_EXPANDED_SPAN_CHARS = 320;
+
 function isTechnicalToken(trimmed: string): boolean {
   if (!trimmed) return false;
   if (ACRONYM_RE.test(trimmed)) return true;
@@ -127,6 +173,38 @@ function isTechnicalToken(trimmed: string): boolean {
   if (SHORT_TOKEN_RE.test(trimmed) && !/^(a|an|the|is|are|was|were|be|to|of|in|on|or|and|not|for|as|by|at|it|if|so|do|we|us|my)$/i.test(trimmed)) {
     return true;
   }
+  return false;
+}
+
+/** Bracket / parenthetical citation markers LanguageTool often treats as typos or punctuation noise. */
+const CITATION_MARKER_RE =
+  /^\[\d+(?:\s*[-–,]\s*\d+)*(?:\s*,\s*\d+(?:\s*[-–,]\s*\d+)*)*\]$|^\(\s*[A-Z][\w'’-]+(?:\s+(?:et\s+al\.?|and|&)\s+[A-Z]?[\w'’.-]+)*,?\s*\d{4}[a-z]?\s*\)$/;
+
+/** "et al." alone or "Smith et al." / "Smith et al" */
+const ET_AL_RE = /^(?:[A-Z][a-z'’-]+(?:\s+[A-Z]\.?)?\s+)?et\s+al\.?$/i;
+
+/** Title-case multi-word person / place names (e.g. "John Smith", "Maria Garcia Lopez"). */
+const MULTI_WORD_PROPER_NAME_RE = /^[A-Z][a-z'’-]+(?:\s+[A-Z][a-z'’-]+){1,3}$/;
+
+/** Initialism + surname: "J. Smith", "A. B. Chen" */
+const INITIAL_SURNAME_RE = /^(?:[A-Z]\.\s*){1,3}[A-Z][a-z'’-]+$/;
+
+/** Compact author lists: "Smith, Jones, and Brown" */
+const AUTHOR_LIST_RE =
+  /^[A-Z][a-z'’-]+(?:\s*,\s*[A-Z][a-z'’-]+)+(?:\s*,?\s*(?:and|&)\s*[A-Z][a-z'’-]+)?$/;
+
+/**
+ * Cheap local drop for spans that are almost never actionable grammar errors in academic
+ * prose: person/author names, author lists, and citation markers. Complements the STEM
+ * token filter; the LLM stage handles harder borderline cases.
+ */
+export function isNameOrAuthorNoise(trimmed: string): boolean {
+  if (!trimmed) return false;
+  if (CITATION_MARKER_RE.test(trimmed)) return true;
+  if (ET_AL_RE.test(trimmed)) return true;
+  if (MULTI_WORD_PROPER_NAME_RE.test(trimmed)) return true;
+  if (INITIAL_SURNAME_RE.test(trimmed)) return true;
+  if (AUTHOR_LIST_RE.test(trimmed)) return true;
   return false;
 }
 
@@ -141,6 +219,7 @@ export function matchToFinding(m: LTMatch, chunk: Chunk, paper: ParsedPaper): Fi
   const flaggedText = paper.fullText.slice(start, end);
   const trimmed = flaggedText.trim();
   if (isTechnicalToken(trimmed)) return null;
+  if (isNameOrAuthorNoise(trimmed)) return null;
 
   const categoryId = m.rule.category?.id || '';
   const isSpellingRule = SPELLING_CATEGORIES.has(categoryId) || /MORFOLOGIK/i.test(m.rule.id);
@@ -149,34 +228,111 @@ export function matchToFinding(m: LTMatch, chunk: Chunk, paper: ParsedPaper): Fi
   if (isSpellingRule && trimmed.length > 2 && occursMultipleTimes(trimmed, paper.fullText)) {
     return null; // recurring "unknown word" is almost always domain vocabulary, not a typo
   }
-  // Ignore style/typography noise that floods scientific PDFs (ligatures, spaces)
-  if (categoryId === 'TYPOGRAPHY') return null;
+  if (DROP_CATEGORIES.has(categoryId)) return null;
 
   const categoryName = m.rule.category?.name || 'Grammar';
-  const isStyleOnly = categoryId === 'STYLE' || categoryId === 'TYPOGRAPHY';
   const options = (m.replacements || []).slice(0, 3).map((r) => r.value);
+
+  // Whole-sentence context: a lone word/phrase flagged by a GRAMMAR/agreement/word-order
+  // rule is rarely the actual problem in isolation — the reader needs the full clause to
+  // judge whether a rewrite is warranted. Pure spelling hits stay word-level: the token
+  // itself is the whole issue, and expanding it would break the one-click replacement.
+  let outStart = start;
+  let outEnd = end;
+  let outText = flaggedText;
+  let replacementText: string | null = options[0] ?? null;
+  let suggestion = options.length
+    ? `Suggested replacement${options.length > 1 ? 's' : ''}: ${options.map((o) => `"${o}"`).join(', ')}`
+    : 'Flagged, but no automatic replacement — rephrase manually.';
+
+  if (!isWordLevelIssue(categoryId, m.rule.id)) {
+    const sentence = findEnclosingSentence(paper.sentences, start, end);
+    if (
+      sentence &&
+      sentence.endOffset - sentence.startOffset > m.length &&
+      sentence.endOffset - sentence.startOffset <= MAX_EXPANDED_SPAN_CHARS
+    ) {
+      outStart = sentence.startOffset;
+      outEnd = sentence.endOffset;
+      outText = paper.fullText.slice(outStart, outEnd);
+      // A word-level auto-replacement can no longer stand in for the whole sentence span.
+      replacementText = null;
+      suggestion = options.length
+        ? `Rework this sentence: replace "${trimmed}" with ${options.map((o) => `"${o}"`).join(' or ')}.`
+        : `Rework this sentence around "${trimmed}" — no automatic replacement, rephrase manually.`;
+    }
+  }
 
   return {
     id: uid(),
     kind: 'grammar',
     category: 'grammar_error',
-    startOffset: start,
-    endOffset: end,
-    page: offsetToPage(paper.pages, start),
-    text: flaggedText,
+    startOffset: outStart,
+    endOffset: outEnd,
+    page: offsetToPage(paper.pages, outStart),
+    text: outText,
     sourceUrl: null,
     sourceTitle: null,
     matchPct: null,
     sourceType: null,
     explanation: `${categoryName}: ${m.message}`,
-    suggestion: options.length
-      ? `Suggested replacement${options.length > 1 ? 's' : ''}: ${options.map((o) => `"${o}"`).join(', ')}`
-      : 'Flagged, but no automatic replacement — rephrase manually.',
-    replacementText: options[0] ?? null,
+    suggestion,
+    replacementText,
+    grammarRuleId: m.rule.id,
+    grammarLtCategory: categoryId || undefined,
+    grammarLtMessage: m.message,
     status: 'open',
-    isInformational: isStyleOnly,
-    confidence: isStyleOnly ? 0.55 : 0.8,
+    isInformational: false,
+    confidence: 0.85,
   };
+}
+
+/**
+ * Sentence-expansion means several LT matches inside one sentence now share identical
+ * [start, end) bounds — without merging, the queue would show the same sentence 2-3 times
+ * with slightly different explanations. Combine same-span findings into one, keeping the
+ * highest-confidence/most-actionable explanation and folding the rest into a bullet list.
+ */
+export function mergeOverlappingGrammarFindings(findings: Finding[]): Finding[] {
+  const bySpan = new Map<string, Finding[]>();
+  const order: string[] = [];
+  for (const f of findings) {
+    const key = `${f.startOffset}:${f.endOffset}`;
+    if (!bySpan.has(key)) {
+      bySpan.set(key, []);
+      order.push(key);
+    }
+    bySpan.get(key)!.push(f);
+  }
+
+  const merged: Finding[] = [];
+  for (const key of order) {
+    const group = bySpan.get(key)!;
+    if (group.length === 1) {
+      merged.push(group[0]);
+      continue;
+    }
+    // Keep the most actionable (non-informational, then highest confidence) as the base.
+    const sorted = [...group].sort((a, b) => {
+      if (a.isInformational !== b.isInformational) return a.isInformational ? 1 : -1;
+      return (b.confidence ?? 0) - (a.confidence ?? 0);
+    });
+    const [base, ...rest] = sorted;
+    const extraNotes = rest
+      .map((f) => f.explanation)
+      .filter((e): e is string => !!e && e !== base.explanation);
+    merged.push({
+      ...base,
+      explanation: extraNotes.length
+        ? `${base.explanation}\nAlso flagged in this sentence:\n• ${extraNotes.join('\n• ')}`
+        : base.explanation,
+      // Multiple distinct issues in one sentence → no single word-level auto-replacement is safe.
+      replacementText: rest.some((f) => f.replacementText !== base.replacementText)
+        ? null
+        : base.replacementText,
+    });
+  }
+  return merged;
 }
 
 export interface GrammarCheckOptions {
@@ -211,5 +367,5 @@ export async function checkGrammar(
     if (i < chunks.length - 1) await sleep(REQUEST_DELAY_MS);
   }
 
-  return findings;
+  return mergeOverlappingGrammarFindings(findings);
 }

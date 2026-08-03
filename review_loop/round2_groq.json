@@ -1,0 +1,87 @@
+{
+  "ok": true,
+  "model": "llama-3.3-70b-versatile",
+  "parsed": {
+    "auditor_issues": [
+      {
+        "issue": "Inconsistent file type hints",
+        "screen": "upload",
+        "severity": "medium",
+        "why": "The code checks for specific file extensions, but the hints only mention 'PDF only' without clarifying the required format for the manuscript file.",
+        "fix": "Update the hints to specify the accepted file types for each slot, including '.docx' for the manuscript."
+      },
+      {
+        "issue": "Unclear 'Apply N safe grammar fixes' tooltip",
+        "screen": "workspace",
+        "severity": "low",
+        "why": "The tooltip states it never rewrites similarity/AI passages, but it's unclear what 'safe' implies.",
+        "fix": "Rephrase the tooltip to explicitly state what 'safe' means in this context, e.g., 'Applies automated grammar fixes that do not affect similarity or AI-flagged passages.'"
+      },
+      {
+        "issue": "Color legend for highlights is compact but lacks clear labels",
+        "screen": "paper_view",
+        "severity": "medium",
+        "why": "The color legend is compact, but the labels for each color are not explicitly stated, potentially causing confusion.",
+        "fix": "Add a clear and accessible label for each color in the legend, possibly using a tooltip or a small description next to each color swatch."
+      },
+      {
+        "issue": "Journal readiness score cards lack clear explanations",
+        "screen": "journal",
+        "severity": "high",
+        "why": "The score cards (Q1-like, Q2-like, IEEE-oriented) are not clearly explained, which could confuse users about their significance.",
+        "fix": "Add a brief explanation or tooltip for each score card, detailing what each score represents and how it's calculated."
+      },
+      {
+        "issue": "Privacy banner countdown lacks clear action",
+        "screen": "global",
+        "severity": "medium",
+        "why": "The countdown timer for the privacy banner does not clearly indicate what action the user should take when the timer expires.",
+        "fix": "Add a clear call-to-action (CTA) near the countdown timer, instructing the user on how to extend the session or save their work before the timer expires."
+      },
+      {
+        "issue": "Export menu lacks clear descriptions",
+        "screen": "workspace",
+        "severity": "low",
+        "why": "The export menu options (change log txt, watermarked PDF) do not have clear descriptions, potentially causing confusion about what each option does.",
+        "fix": "Add brief descriptions or tooltips for each export option, explaining the purpose and content of each exported file type."
+      }
+    ],
+    "first_time_user_confusions": [
+      {
+        "issue": "Understanding the purpose of each file upload slot",
+        "screen": "upload",
+        "severity": "high",
+        "why": "The user might not immediately understand the purpose of each file slot (manuscript, similarity report, AI writing report) or why they are optional or required.",
+        "fix": "Add a brief description or tooltip for each file slot, explaining its purpose and whether it's required for the analysis."
+      },
+      {
+        "issue": "Interpreting findings and their severity",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "The user might struggle to understand the severity of each finding and what actions are recommended (Fix first, Review, etc.).",
+        "fix": "Enhance the findings queue with clearer severity indicators and recommended actions, possibly using icons or colors to differentiate between severity levels."
+      },
+      {
+        "issue": "Navigating the workspace and its components",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "The user might find it challenging to navigate the workspace, especially understanding the relationship between the paper view, findings queue, and other components.",
+        "fix": "Improve the workspace layout and add clear headings or separators to distinguish between different sections, making it easier for users to navigate and understand the workflow."
+      },
+      {
+        "issue": "Understanding journal readiness scores",
+        "screen": "journal",
+        "severity": "high",
+        "why": "The user might not understand the significance of the journal readiness scores or how they are calculated.",
+        "fix": "Provide a clear explanation of the journal readiness scores, including how they are calculated and what they indicate about the manuscript's readiness for submission."
+      },
+      {
+        "issue": "Exporting results and understanding their purpose",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "The user might be unsure about which export option to choose or what the purpose of each exported file is.",
+        "fix": "Enhance the export menu with clearer descriptions of each option, including the purpose and content of each exported file type, to help users make informed decisions."
+      }
+    ]
+  }
+}

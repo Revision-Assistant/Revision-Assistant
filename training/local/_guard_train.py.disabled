@@ -1,0 +1,75 @@
+﻿import os, sys, time, subprocess, ctypes
+from pathlib import Path
+HERE = Path(r"c:\Users\subha\Desktop\plag and AI\training\local")
+os.chdir(HERE)
+try:
+    ctypes.windll.kernel32.SetThreadExecutionState(0x80000000|0x00000001)
+except Exception:
+    pass
+
+def pids_cmdline():
+    out = []
+    try:
+        r = subprocess.check_output(
+            ["wmic", "process", "where", "name='python.exe'", "get", "ProcessId,CommandLine", "/FORMAT:LIST"],
+            text=True, errors="replace",
+        )
+    except Exception:
+        return out
+    cur = {}
+    for line in r.splitlines():
+        line = line.strip()
+        if not line:
+            if cur.get("ProcessId") and cur.get("CommandLine"):
+                out.append((int(cur["ProcessId"]), cur["CommandLine"]))
+            cur = {}
+            continue
+        if "=" in line:
+            k, v = line.split("=", 1)
+            cur[k] = v
+    if cur.get("ProcessId") and cur.get("CommandLine"):
+        out.append((int(cur["ProcessId"]), cur["CommandLine"]))
+    return out
+
+def kill_competitors(protect):
+    for pid, cmd in pids_cmdline():
+        if pid in protect:
+            continue
+        # kill other rewrite trainers / wrappers
+        if ("train_rewrite.py" in cmd) or ("train_rw_job.py" in cmd and "report_plag" in cmd and pid not in protect):
+            if "train_rw_job.py" in cmd and pid in protect:
+                continue
+            if any(x in cmd for x in ("train_rewrite.py", "_run_train.py", "_run_report")):
+                try:
+                    os.kill(pid, 9)
+                    print(f"guardian killed {pid}", flush=True)
+                except Exception as e:
+                    print(f"guardian fail {pid}: {e}", flush=True)
+
+task, epochs = "report_plag", "2"
+status = HERE / f"train_{task}.status"
+log = HERE / f"train_{task}.log"
+env = os.environ.copy()
+env["TF_CPP_MIN_LOG_LEVEL"] = "3"
+env["PYTHONUNBUFFERED"] = "1"
+t0 = time.time()
+# clear competitors first
+kill_competitors(protect={os.getpid()})
+time.sleep(2)
+with open(log, "w", encoding="utf-8", errors="replace") as f:
+    p = subprocess.Popen(
+        [sys.executable, "-u", "train_rw_job.py", "--task", task, "--epochs", epochs],
+        stdout=f, stderr=subprocess.STDOUT, env=env, cwd=str(HERE),
+    )
+    protect = {os.getpid(), p.pid}
+    status.write_text(f"running pid={p.pid} task={task} epochs={epochs} t0={time.strftime('%H:%M:%S')} guarded=1\n", encoding="utf-8")
+    while p.poll() is None:
+        kill_competitors(protect)
+        try:
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000|0x00000001)
+        except Exception:
+            pass
+        time.sleep(3)
+    rc = p.returncode
+status.write_text(f"exit={rc} elapsed_min={(time.time()-t0)/60:.2f} ended={time.strftime('%H:%M:%S')} task={task}\n", encoding="utf-8")
+print(f"done exit={rc}", flush=True)

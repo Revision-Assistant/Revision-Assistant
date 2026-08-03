@@ -56,12 +56,13 @@ See `inference_config.json` for the calibrated decision threshold and validation
 """
 (MODEL_DIR / "README.md").write_text(readme, encoding="utf-8")
 
-print("uploading files...")
+print("uploading files (quantized only — skipping fp32 model.onnx)...")
 api.upload_folder(
     repo_id=repo_id,
     folder_path=str(MODEL_DIR),
     repo_type="model",
-    commit_message="Upload quantized citation-need classifier",
+    commit_message="Upload quantized citation-need classifier (threshold 0.55, hard-neg retrain)",
+    ignore_patterns=["**/model.onnx", "**/*.onnx_data"],
 )
 
 print(f"\ndone: https://huggingface.co/{repo_id}")

@@ -1,4 +1,4 @@
-# Logs
+﻿# Logs
 logs
 *.log
 npm-debug.log*
@@ -21,8 +21,13 @@ test/
 public/samples/**
 !public/samples/.gitkeep
 
-# Local training artifacts — regenerable from prepare_data.py + train_scibert.py;
-# checkpoints exceed GitHub's 100MB file limit anyway
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Local training artifacts — regenerable; checkpoints exceed GitHub 100MB limit
 training/local/raw_train.jsonl
 training/local/*.jsonl
 training/local/out/
@@ -33,6 +38,29 @@ training/local/rewrite_data/
 training/local/rewrite_out/
 training/local/rewrite_best/
 training/local/*_raw.jsonl
+training/local/*_out/
+training/local/*_best/
+training/local/*_onnx/
+training/local/benchmark_out/
+training/local/**/checkpoint-*/
+training/local/**/*.safetensors
+training/local/**/*.onnx
+training/local/**/optimizer.pt
+training/local/**/scheduler.pt
+training/local/**/rng_state.pth
+training/local/**/scaler.pt
+training/local/**/training_args.bin
+training/local/**/trainer_state.json
+training/local/*.npz
+training/local/*.lock
+training/local/*_GPU.lock
+training/local/*.flag
+training/local/*.status
+training/local/*.err
+training/local/help_err.txt
+training/local/help_out.txt
+training/local/grok_audit_rounds/
+training/local/ai_detect_sweep_probs.npz
 
 # Declined feature (auto-rewrite/paraphrase-to-evade-detection) — not part of this project
 training/local/entity_guard.py
@@ -47,8 +75,9 @@ training/local/solve_local.py
 training/local/train_rewrite.py
 scripts/eval_test_folder.ts
 
-# Quantized ONNX weights — host on Hugging Face for production
-public/models/citation-need/onnx/
+# Quantized ONNX weights (>100MB) — host on Hugging Face Hub for production;
+# keep tokenizer/config JSON in public/models/** for local/dev wiring
+public/models/**/onnx/
 
 # Editor
 .vscode/*

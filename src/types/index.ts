@@ -18,7 +18,8 @@ export type FindingKind =
   | 'grammar'
   | 'orphan_ref'
   | 'broken_citation'
-  | 'citation_need';
+  | 'citation_need'
+  | 'manuscript_quality';
 
 export type FindingCategory =
   | 'reference_entry'
@@ -36,7 +37,11 @@ export type FindingCategory =
   | 'review_manually'
   | 'grammar_error'
   | 'trivial_match'
-  | 'needs_citation_claim';
+  | 'needs_citation_claim'
+  | 'numerical_ambiguity'
+  | 'numerical_inconsistency'
+  | 'publication_issue'
+  | 'novelty_issue';
 
 export type FindingStatus = 'open' | 'accepted' | 'dismissed' | 'edited';
 
@@ -126,6 +131,9 @@ export interface AIReport {
   rawText: string;
 }
 
+/** Where a finding's signal came from (report PDF vs local heuristic). */
+export type ReportOrigin = 'similarity_report' | 'ai_report' | 'local_heuristic';
+
 export interface AlignedSpan {
   reportText: string;
   paperStart: number;
@@ -141,6 +149,8 @@ export interface AlignedSpan {
    * the sentence *around* the match — the exact matched fragment is unknown.
    */
   positionOnly?: boolean;
+  /** Provenance for report-debug UI and explain prompts */
+  origin?: ReportOrigin;
 }
 
 export interface Finding {
@@ -169,8 +179,33 @@ export interface Finding {
   citationWarning?: boolean;
   /** Exact one-click replacement text for kind === 'grammar' findings (see lib/grammar/languageTool.ts) */
   replacementText?: string | null;
+  /** LanguageTool rule id — used by the LLM grammar filter; not shown in the UI */
+  grammarRuleId?: string;
+  /** LanguageTool category id (e.g. GRAMMAR, TYPOS) for the LLM grammar filter */
+  grammarLtCategory?: string;
+  /** Raw LanguageTool message (without the category-name prefix in explanation) */
+  grammarLtMessage?: string;
   /** Signals behind a citation_need finding; doubles as the training feature vector */
   citationNeedFeatures?: CitationNeedFeatures;
+  /** Signals behind a manuscript_quality finding */
+  manuscriptQualityFeatures?: ManuscriptQualityFeatures;
+  /** Second conflicting span (numerical_inconsistency) */
+  relatedSpan?: TextSpan;
+  /** Structured conflict metadata for numerical_inconsistency */
+  numericalConflict?: {
+    metricLabel: string;
+    valueA: string;
+    valueB: string;
+    unitFamily: string;
+  };
+  /** Excerpt text as it appeared in the uploaded report (when available) */
+  reportText?: string | null;
+  /** All match sources from the similarity report (primary is also mirrored above) */
+  sources?: MatchSource[];
+  /** Badge-style match: report marks position, not exact extent */
+  positionOnly?: boolean;
+  /** Report PDF vs local heuristic — drives “Why flagged” provenance */
+  reportOrigin?: ReportOrigin | null;
 }
 
 export interface CitationNeedFeatures {
@@ -181,6 +216,16 @@ export interface CitationNeedFeatures {
   wordCount: number;
   numericCount: number;
   section: SectionName;
+  score: number;
+}
+
+export interface ManuscriptQualityFeatures {
+  hasNumericalAmbiguity: boolean;
+  hasPublicationIssue: boolean;
+  hasNoveltyIssue: boolean;
+  wordCount: number;
+  section: SectionName;
+  predictedLabel: 'numerical_ambiguity' | 'publication_issue' | 'novelty_issue' | null;
   score: number;
 }
 
@@ -207,6 +252,9 @@ export interface AnalysisResult {
   ai: AIReport | null;
   findings: Finding[];
   meta: ProjectMeta;
+  /** Original manuscript bytes for format-preserving PDF export */
+  sourceBytes?: ArrayBuffer;
+  sourceKind?: 'pdf' | 'docx';
 }
 
 export interface ChangeLogEntry {
@@ -229,6 +277,7 @@ export type PipelineStage =
   | 'aligning'
   | 'categorizing'
   | 'citation_need'
+  | 'manuscript_quality'
   | 'grammar_check'
   | 'explaining'
   | 'done'

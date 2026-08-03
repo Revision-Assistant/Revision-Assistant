@@ -96,7 +96,7 @@ function buildWindows(fullText: string, queryLen: number): WindowCandidate[] {
 export function alignSpan(
   reportText: string,
   paper: ParsedPaper,
-  threshold = 0.72
+  threshold = 0.78
 ): { start: number; end: number; score: number; paperText: string } | null {
   const q = reportText.trim();
   if (q.length < 15) return null;
@@ -229,7 +229,7 @@ function approximateDenormalize(original: string, normIndex: number): number {
 export function alignSimilarityFlags(
   flags: SimilarityFlag[],
   paper: ParsedPaper,
-  threshold = 0.72
+  threshold = 0.78
 ): { aligned: AlignedSpan[]; matchRate: number } {
   const aligned: AlignedSpan[] = [];
   let hits = 0;
@@ -249,6 +249,7 @@ export function alignSimilarityFlags(
         matchPct: f.matchPct,
         kind: 'similarity',
         positionOnly: true,
+        origin: 'similarity_report',
       });
       continue;
     }
@@ -266,6 +267,7 @@ export function alignSimilarityFlags(
         sources: f.sources,
         matchPct: f.matchPct,
         kind: 'similarity',
+        origin: 'similarity_report',
       });
     } else {
       // Keep unaligned with score 0 at report offsets (won't highlight paper well)
@@ -279,6 +281,7 @@ export function alignSimilarityFlags(
         sources: f.sources,
         matchPct: f.matchPct,
         kind: 'similarity',
+        origin: 'similarity_report',
       });
     }
   }
@@ -289,7 +292,7 @@ export function alignSimilarityFlags(
 export function alignAIFlags(
   flags: AIFlag[],
   paper: ParsedPaper,
-  threshold = 0.72
+  threshold = 0.78
 ): AlignedSpan[] {
   const out: AlignedSpan[] = [];
   for (const f of flags) {
@@ -305,6 +308,7 @@ export function alignAIFlags(
         sources: [] as MatchSource[],
         matchPct: null,
         kind: 'ai',
+        origin: 'ai_report',
       });
     }
   }

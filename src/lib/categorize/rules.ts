@@ -134,7 +134,7 @@ export function matchSourceToReferences(
   }
 
   // Conservative threshold
-  if (!best || best.score < 0.82) return null;
+  if (!best || best.score < 0.86) return null;
   return best.ref;
 }
 
@@ -194,15 +194,19 @@ export function categorizeSimilaritySpan(
     suggestion: null as string | null,
     status: 'open' as const,
     confidence: span.score,
+    reportText: span.reportText || null,
+    sources: span.sources?.length ? span.sources : undefined,
+    positionOnly: !!span.positionOnly,
+    reportOrigin: (span.origin || 'similarity_report') as Finding['reportOrigin'],
   };
 
-  if (!aligned || span.score < 0.5) {
+  if (!aligned || span.score < 0.62) {
     return {
       ...base,
       category: 'review_manually',
-      isInformational: false,
+      isInformational: true,
       explanation:
-        'Could not reliably locate this flagged passage in your paper. Review the Turnitin highlight manually.',
+        'Could not reliably locate this flagged passage in your paper. Review the highlight in your similarity report manually.',
       confidence: span.score,
     };
   }
@@ -214,7 +218,7 @@ export function categorizeSimilaritySpan(
       category: 'source_unidentifiable',
       isInformational: false,
       explanation:
-        'Turnitin matched a student paper or institutional repository. The matched text cannot be shown and no citation can be proposed. Use your judgement: restate in your own words if this is not an independent coincidence, and ensure you are not recycling prior coursework without disclosure.',
+        'The report matched a student paper or institutional repository. The matched text cannot be shown and no citation can be proposed. Use your judgement: restate in your own words if this is not an independent coincidence, and ensure you are not recycling prior coursework without disclosure.',
       confidence: Math.min(span.score, 0.55),
     };
   }
@@ -301,16 +305,15 @@ export function categorizeSimilaritySpan(
     };
   }
 
-  // Turnitin reports sub-1% sources as "<1%" — a fragment, not a passage. Surfacing these
-  // as "needs a citation" buries the handful of real problems under dozens of incidental
-  // phrase overlaps. Shown, not hidden, per the display decision in plan.md §12.
-  if (src.pct != null && src.pct < 1) {
+  // Sub-2% sources are almost always shared terminology / short fragments, not passages.
+  // Surfacing them as "needs a citation" buries real problems under incidental overlaps.
+  if (src.pct != null && src.pct < 2) {
     return {
       ...base,
       category: 'trivial_match',
       isInformational: true,
       explanation:
-        `Turnitin attributes under 1% of the document to this source${src.title ? ` (${src.title.slice(0, 70)})` : ''}` +
+        `The report attributes under 1% of the document to this source${src.title ? ` (${src.title.slice(0, 70)})` : ''}` +
         `, so the overlap is a short fragment rather than a passage.` +
         (span.positionOnly
           ? ' The report marks its position but not its extent, so the whole sentence is highlighted here — only part of it actually matched.'
@@ -326,13 +329,13 @@ export function categorizeSimilaritySpan(
       category: 'source_unidentifiable',
       isInformational: false,
       explanation:
-        'Turnitin did not provide a clear identifiable source. Restate the idea in your own words and add a citation if you know the origin.',
+        'The report did not provide a clear identifiable source. Restate the idea in your own words and add a citation if you know the origin.',
       confidence: 0.5,
     };
   }
 
   // Long high-overlap without citation → restatement
-  if (words >= 20 && (src.pct ?? 0) >= 2) {
+  if (words >= 24 && (src.pct ?? 0) >= 3 && span.score >= 0.7) {
     const embedded = extractMarkers(text);
     return {
       ...base,
@@ -381,6 +384,7 @@ export function categorizeAISpan(
 ): Finding {
   const start = span.paperStart;
   const end = span.paperEnd;
+  const origin = span.origin || 'ai_report';
   return {
     id: uid(),
     kind: 'ai',
@@ -400,6 +404,9 @@ export function categorizeAISpan(
     isInformational: false,
     confidence: span.score,
     aiFeatures: features,
+    reportText: span.reportText || null,
+    positionOnly: !!span.positionOnly,
+    reportOrigin: origin,
   };
 }
 
@@ -507,6 +514,10 @@ export function categorizeAll(
       'needs_new_citation',
       'missing_in_text_citation',
       'needs_citation_claim',
+      'numerical_inconsistency',
+      'numerical_ambiguity',
+      'publication_issue',
+      'novelty_issue',
       'source_unidentifiable',
       'ai_flagged',
       'broken_citation',
@@ -539,6 +550,10 @@ export function needsLlmExplanation(f: Finding): boolean {
     !f.isInformational &&
     (f.category === 'needs_new_citation' ||
       f.category === 'needs_restatement' ||
-      f.category === 'ai_flagged')
+      f.category === 'ai_flagged' ||
+      f.category === 'numerical_ambiguity' ||
+      f.category === 'numerical_inconsistency' ||
+      f.category === 'publication_issue' ||
+      f.category === 'novelty_issue')
   );
 }

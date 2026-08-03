@@ -1,0 +1,20 @@
+﻿import os, sys, time, traceback, subprocess
+from pathlib import Path
+HERE = Path(r"c:\Users\subha\Desktop\plag and AI\training\local")
+os.chdir(HERE)
+status = HERE / "train_report_plag.status"
+log = HERE / "train_report_plag.log"
+status.write_text(f"started {time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
+env = os.environ.copy()
+env["TF_CPP_MIN_LOG_LEVEL"] = "3"
+env["PYTHONUNBUFFERED"] = "1"
+t0 = time.time()
+with open(log, "w", encoding="utf-8", errors="replace") as f:
+    p = subprocess.Popen(
+        [sys.executable, "-u", "train_rewrite.py", "--task", "report_plag", "--epochs", "2"],
+        stdout=f, stderr=subprocess.STDOUT, env=env, cwd=str(HERE),
+    )
+    status.write_text(f"running pid={p.pid} started={time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
+    rc = p.wait()
+elapsed = (time.time() - t0) / 60
+status.write_text(f"exit={rc} elapsed_min={elapsed:.2f} ended={time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")

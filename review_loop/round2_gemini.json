@@ -1,0 +1,80 @@
+{
+  "ok": true,
+  "model": "gemini-flash-latest",
+  "parsed": {
+    "auditor_issues": [
+      {
+        "issue": "FileSlot container click handler re-triggers file picker when clicking filled slot whitespace",
+        "screen": "upload",
+        "severity": "high",
+        "why": "Although an explicit browse button was added for keyboard accessibility, clicking empty area in a FileSlot div that already contains a file still triggers `inputRef.current?.click()`. Users attempting to click near the slot to focus or read metadata accidentally re-open the native OS file selection dialog.",
+        "fix": "In FileSlot `onClick`, check `if (file) return;` so clicking the slot container only opens the picker when empty, forcing users to use the explicit 'Clear' button to replace files."
+      },
+      {
+        "issue": "FileSlot clear buttons lack context for screen readers",
+        "screen": "upload",
+        "severity": "medium",
+        "why": "The clear button renders plain text 'Clear' without indicating which file is being removed (`<button className=\"linkish\">Clear</button>`). Screen reader users navigating by controls hear three identical 'Clear' buttons.",
+        "fix": "Add `aria-label={`Clear ${label.toLowerCase()}`}` to the clear button inside FileSlot."
+      },
+      {
+        "issue": "jumpToPage silently exits Revised view when target page has no applied edits",
+        "screen": "paper_view",
+        "severity": "medium",
+        "why": "In `PaperView.tsx`, if `showRevised` is true and `jumpToPage` is called for a page without edits, it falls back to checking open findings and calls `setShowRevised(false)`. This forcibly changes the user's viewing mode without explicit user intent.",
+        "fix": "Maintain `showRevised` mode state during page jump navigation and scroll to the page anchor in the revised text DOM instead of resetting `showRevised` to false."
+      },
+      {
+        "issue": "Text highlights rely exclusively on color cues for category identification",
+        "screen": "paper_view",
+        "severity": "medium",
+        "why": "Categories in `PaperView.tsx` use background classes (`hl-action`, `hl-warn`, `hl-ai`, `hl-quality`) without visual icons or underlined pattern indicators. Colorblind users cannot distinguish high-severity citation gaps from informational matches in the body text.",
+        "fix": "Add subtle non-color indicators (e.g., dotted bottom border for citations, dashed for AI, wavy for grammar) to category highlight CSS classes."
+      },
+      {
+        "issue": "ScoreCard components lack ARIA meter/progressbar roles and value attributes",
+        "screen": "journal",
+        "severity": "low",
+        "why": "The score cards in `JournalReadiness.tsx` display numeric scores (/100) inside generic markup without `role=\"meter\"`, `aria-valuenow`, or `aria-valuemax` attributes.",
+        "fix": "Wrap ScoreCard numbers with `<div role=\"meter\" aria-valuenow={value} aria-valuemin={0} aria-valuemax={100} aria-label={label}>`."
+      }
+    ],
+    "first_time_user_confusions": [
+      {
+        "issue": "Unsure how Turnitin PDF upload connects with manuscript analysis",
+        "screen": "upload",
+        "severity": "high",
+        "why": "As a PhD student uploading a Turnitin similarity report alongside my draft, I am unclear whether the tool modifies my original Turnitin report or just uses it as context. The upload zone does not explicitly explain how matching text spans in the PDF report align with my Word draft.",
+        "fix": "Add a short micro-copy line below the optional slots explaining: 'We match flagged text spans in your similarity PDF directly against your manuscript paragraphs.'"
+      },
+      {
+        "issue": "Term 'LLM humanize' triggers fear of academic misconduct",
+        "screen": "findings_queue",
+        "severity": "high",
+        "why": "Seeing 'Draft rewrite (LLM humanize)' on AI-flagged cards makes me worried this function uses unethical text-spinning that violates my university's honor code. I am afraid to click it.",
+        "fix": "Relabel 'LLM humanize' buttons to 'Academic rephrase draft' and add microcopy stating 'Drafts reword passages in clear academic prose for human review.'"
+      },
+      {
+        "issue": "Score cards look like official journal acceptance probabilities",
+        "screen": "journal",
+        "severity": "medium",
+        "why": "Seeing bold scores like 'Q1-like bar: 72/100' makes me wonder if my paper is guaranteed to pass peer review or if IEEE will reject it. Even with the disclaimer paragraph, the large numbers visually dominate.",
+        "fix": "Change the card headers from 'Q1-like bar' to 'Structure checklist match' and place 'Heuristic only — not peer review' directly inside each score card header."
+      },
+      {
+        "issue": "Lack of DOCX export forces manual copy-pasting back into Microsoft Word",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "I wrote my paper in Word (.docx), but the export menu only offers .txt and watermarked PDF. I am confused about how to get my accepted changes back into my primary Word file without retyping everything.",
+        "fix": "Add a clear helper note in the export menu explaining: 'Export the change log .txt to view side-by-side with your Word document, or download the revised text.'"
+      },
+      {
+        "issue": "Batch grammar card hides individual grammar issues in 'Everything' queue view",
+        "screen": "findings_queue",
+        "severity": "low",
+        "why": "When reviewing 'Everything', all grammar items collapse into one summary card with 'Fix N safe ones'. I am hesitant to batch-fix grammar without seeing each sentence change first.",
+        "fix": "Add a prominent 'View all N grammar suggestions' link inside the batch card to quickly switch filter tab to 'Grammar'."
+      }
+    ]
+  }
+}

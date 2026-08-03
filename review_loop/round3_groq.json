@@ -1,0 +1,178 @@
+{
+  "ok": true,
+  "model": "llama-3.3-70b-versatile",
+  "parsed": {
+    "auditor_issues": [
+      {
+        "issue": "No clear indication of file size limits for uploads",
+        "screen": "upload",
+        "severity": "medium",
+        "why": "The code mentions size limits (PAPER_MAX_BYTES, REPORT_MAX_BYTES) but this information is not clearly communicated to the user on the upload screen.",
+        "fix": "Display file size limits next to each file slot or in a tooltip."
+      },
+      {
+        "issue": "Unclear purpose of 'What this session covers' scope list",
+        "screen": "upload",
+        "severity": "low",
+        "why": "The purpose of this list is not explicitly stated, potentially causing confusion for first-time users.",
+        "fix": "Add a brief description or tooltip explaining the purpose of this list."
+      },
+      {
+        "issue": "Color legend for highlight categories is not explicitly explained",
+        "screen": "paper_view",
+        "severity": "medium",
+        "why": "While the legend is present, its purpose and the meaning of each color/category might not be immediately clear to all users.",
+        "fix": "Add a tooltip or brief description to the color legend explaining each category."
+      },
+      {
+        "issue": "Non-colour cues for highlight categories may not be sufficient for all users",
+        "screen": "paper_view",
+        "severity": "low",
+        "why": "Some users might still struggle to distinguish between categories based solely on underline patterns.",
+        "fix": "Consider adding additional cues, such as icons or abbreviations, to further differentiate categories."
+      },
+      {
+        "issue": "Journal readiness score cards lack clear explanations",
+        "screen": "journal",
+        "severity": "medium",
+        "why": "The scores and categories (Q1-like, Q2-like, IEEE-oriented) may not be immediately understandable to all users.",
+        "fix": "Provide tooltips or a brief guide explaining the scoring system and categories."
+      },
+      {
+        "issue": "Export menu options could be more descriptive",
+        "screen": "workspace",
+        "severity": "low",
+        "why": "Options like 'change log txt' and 'watermarked PDF' might not be self-explanatory to all users.",
+        "fix": "Add brief descriptions or tooltips to explain the purpose and content of each export option."
+      },
+      {
+        "issue": "'Apply all fixes' button lacks confirmation prompt",
+        "screen": "workspace",
+        "severity": "high",
+        "why": "Automatically applying fixes without user confirmation could lead to unintended changes.",
+        "fix": "Add a confirmation prompt before applying all fixes."
+      },
+      {
+        "issue": "No clear indication of what 'Start over' will reset",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "Users might not understand what specific data or progress will be lost when starting over.",
+        "fix": "Provide a clear description of what starting over entails, ideally in a confirmation prompt."
+      },
+      {
+        "issue": "Filter chips in FindingsQueue lack tooltips",
+        "screen": "findings_queue",
+        "severity": "low",
+        "why": "The purpose of each filter chip (e.g., Citations, Similarity) might not be immediately clear.",
+        "fix": "Add tooltips to explain the purpose of each filter chip."
+      },
+      {
+        "issue": "'Show reviewed' and 'Show informational' toggles lack clear explanations",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "The distinction between reviewed and informational findings might not be clear to all users.",
+        "fix": "Add tooltips or brief descriptions to explain the difference between these two types of findings."
+      },
+      {
+        "issue": "Privacy banner countdown lacks clear explanation of what will happen at timeout",
+        "screen": "global",
+        "severity": "medium",
+        "why": "Users might not understand what data will be lost or what actions will be taken when the session times out.",
+        "fix": "Provide a clear description of what happens when the session times out, ideally with an option to extend the session."
+      },
+      {
+        "issue": "Legal footer attributions and disclaimers may be too lengthy and dense",
+        "screen": "footer",
+        "severity": "low",
+        "why": "The extensive legal text might overwhelm users and make it difficult to find relevant information.",
+        "fix": "Consider summarizing key points or providing a link to a separate page with full legal details."
+      }
+    ],
+    "first_time_user_confusions": [
+      {
+        "issue": "Understanding the purpose of the 'Analyze' button",
+        "screen": "upload",
+        "severity": "high",
+        "why": "I'm not sure what the 'Analyze' button does or what to expect after clicking it.",
+        "fix": "Add a brief description or tooltip explaining the purpose of the 'Analyze' button and what happens next."
+      },
+      {
+        "issue": "Interpreting the findings and their severity",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "I'm not sure what the different colors and categories mean or how to prioritize the findings.",
+        "fix": "Provide clear explanations of each category and severity level, ideally with examples or tooltips."
+      },
+      {
+        "issue": "Understanding the 'Fix & next' and 'Draft rewrite' options",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "I'm not sure what these options do or how they differ from each other.",
+        "fix": "Add brief descriptions or tooltips explaining the purpose of each option and how they affect the manuscript."
+      },
+      {
+        "issue": "Navigating the 'Journal readiness' tab",
+        "screen": "journal",
+        "severity": "medium",
+        "why": "I'm not sure what the scores and categories mean or how to use this information to improve my manuscript.",
+        "fix": "Provide clear explanations of the scoring system and categories, along with guidance on how to address any issues identified."
+      },
+      {
+        "issue": "Understanding the export options and their purposes",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "I'm not sure what the different export options are for or how to choose the right one.",
+        "fix": "Add brief descriptions or tooltips explaining the purpose of each export option and what to expect from the exported file."
+      },
+      {
+        "issue": "Finding specific information in the 'FindingsQueue'",
+        "screen": "findings_queue",
+        "severity": "low",
+        "why": "I'm having trouble finding specific types of findings or navigating the queue.",
+        "fix": "Consider adding a search function or improving the filtering and sorting options to make it easier to find specific information."
+      },
+      {
+        "issue": "Understanding the 'Humanize bar' and its purpose",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "I'm not sure what the 'Humanize bar' does or how it relates to the findings and my manuscript.",
+        "fix": "Add a brief description or tooltip explaining the purpose of the 'Humanize bar' and how it can be used to improve the manuscript."
+      },
+      {
+        "issue": "Deciding when to use the 'Apply all fixes' button",
+        "screen": "workspace",
+        "severity": "high",
+        "why": "I'm not sure when it's safe to apply all fixes or what the potential consequences might be.",
+        "fix": "Provide clear guidance on when to use the 'Apply all fixes' button and what to expect from the process."
+      },
+      {
+        "issue": "Understanding the 'Start over' option and its consequences",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "I'm not sure what starting over will do or what data will be lost.",
+        "fix": "Add a clear description of what starting over entails, ideally in a confirmation prompt."
+      },
+      {
+        "issue": "Finding help or support within the application",
+        "screen": "global",
+        "severity": "low",
+        "why": "I'm not sure where to find help or support if I have questions or encounter issues.",
+        "fix": "Consider adding a help menu or support resources, such as a FAQ or contact information, to make it easier for users to find assistance."
+      },
+      {
+        "issue": "Understanding the session timeout and its consequences",
+        "screen": "global",
+        "severity": "medium",
+        "why": "I'm not sure what will happen when the session times out or how to prevent data loss.",
+        "fix": "Provide clear explanations of what happens when the session times out and offer options to extend the session or save progress."
+      },
+      {
+        "issue": "Navigating the application and finding specific features",
+        "screen": "global",
+        "severity": "low",
+        "why": "I'm having trouble finding specific features or navigating the application.",
+        "fix": "Consider improving the application's layout and navigation to make it easier for users to find what they need."
+      }
+    ]
+  }
+}

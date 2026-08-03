@@ -1,0 +1,22 @@
+﻿import os, sys, time, subprocess
+from pathlib import Path
+HERE = Path(r"c:\Users\subha\Desktop\plag and AI\training\local")
+os.chdir(HERE)
+task = sys.argv[1]
+epochs = sys.argv[2]
+status = HERE / f"train_{task}.status"
+log = HERE / f"train_{task}.log"
+env = os.environ.copy()
+env["TF_CPP_MIN_LOG_LEVEL"] = "3"
+env["PYTHONUNBUFFERED"] = "1"
+t0 = time.time()
+status.write_text(f"starting {task} epochs={epochs}\n", encoding="utf-8")
+with open(log, "w", encoding="utf-8", errors="replace") as f:
+    p = subprocess.Popen(
+        [sys.executable, "-u", "train_rewrite.py", "--task", task, "--epochs", epochs],
+        stdout=f, stderr=subprocess.STDOUT, env=env, cwd=str(HERE),
+    )
+    status.write_text(f"running pid={p.pid} task={task} epochs={epochs} t0={time.strftime('%H:%M:%S')}\n", encoding="utf-8")
+    rc = p.wait()
+elapsed = (time.time() - t0) / 60
+status.write_text(f"exit={rc} elapsed_min={elapsed:.2f} ended={time.strftime('%H:%M:%S')} task={task}\n", encoding="utf-8")

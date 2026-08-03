@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test:unit": "tsx src/lib/pdf/fingerprint.test.ts && tsx src/lib/alignment/fuzzyMatch.test.ts && tsx src/lib/categorize/rules.test.ts && tsx src/lib/citation/guard.test.ts && tsx src/lib/pdf/paperParser.test.ts && tsx src/lib/grammar/languageTool.test.ts && tsx src/lib/pdf/badgeReport.test.ts && tsx src/lib/citation/citationNeed.test.ts",
+    "test:unit": "tsx src/lib/pdf/fingerprint.test.ts && tsx src/lib/alignment/fuzzyMatch.test.ts && tsx src/lib/categorize/rules.test.ts && tsx src/lib/citation/guard.test.ts && tsx src/lib/pdf/paperParser.test.ts && tsx src/lib/grammar/languageTool.test.ts && tsx src/lib/pdf/badgeReport.test.ts && tsx src/lib/citation/citationNeed.test.ts && tsx src/lib/reportDebug.test.ts && tsx src/lib/ai/localScan.test.ts && tsx src/lib/quality/manuscriptQuality.test.ts && tsx src/lib/quality/numericalInconsistency.test.ts && tsx src/lib/export/changeLog.test.ts && tsx src/lib/export/pdfDrawSafe.test.ts && tsx src/lib/journal/scoreReadiness.test.ts && tsx src/lib/submission/checklist.test.ts && tsx src/lib/submission/referenceHygiene.test.ts && tsx src/lib/submission/statements.test.ts && tsx src/lib/reformat/reformat.test.ts",
     "test:folder": "tsx scripts/eval_test_folder.ts",
     "netlify:dev": "netlify dev"
   },
@@ -19,6 +19,7 @@
     "citation-js": "^0.7.21",
     "fuse.js": "^7.1.0",
     "mammoth": "^1.12.0",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.296",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

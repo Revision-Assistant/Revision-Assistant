@@ -1,0 +1,46 @@
+{
+  "train": {
+    "n": 263647,
+    "machine": 110135,
+    "human": 153512
+  },
+  "val": {
+    "n": 15000,
+    "machine": 6785,
+    "human": 8215
+  },
+  "test": {
+    "n": 30000,
+    "machine": 14127,
+    "human": 15873
+  },
+  "test_mage_ood": {
+    "n": 4780,
+    "machine": 2499,
+    "human": 2281
+  },
+  "test_mage_para": {
+    "n": 7281,
+    "machine": 5000,
+    "human": 2281
+  },
+  "test_idmgsp_ood": {
+    "n": 20000,
+    "machine": 10000,
+    "human": 10000
+  },
+  "sources": {
+    "hc3": 43045,
+    "idmgsp_train": 66887,
+    "unarxive": 41929,
+    "mage_train": 97805,
+    "scihra": 13981
+  },
+  "datasets": {
+    "yaful/MAGE": "apache-2.0",
+    "tum-nlp/IDMGSP": "openrail++",
+    "Hello-SimpleAI/HC3": "cc-by-sa-4.0",
+    "mithu-ngl/SciHRA-Detect": "open (research)",
+    "unarXive (local raw_train.jsonl)": "cc-by"
+  }
+}

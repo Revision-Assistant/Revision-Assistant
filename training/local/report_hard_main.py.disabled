@@ -1,0 +1,21 @@
+﻿import os, sys, time, subprocess
+from pathlib import Path
+HERE = Path(r"c:\Users\subha\Desktop\plag and AI\training\local")
+os.chdir(HERE)
+env = os.environ.copy(); env["TF_CPP_MIN_LOG_LEVEL"]="3"; env["PYTHONUNBUFFERED"]="1"
+stat = HERE / "train_report_plag.status"
+def run(task):
+    log = HERE / f"train_{task}.log"
+    err = HERE / f"train_{task}.err"
+    stat.write_text(f"running {task} {time.strftime('%H:%M:%S')}\n", encoding="utf-8")
+    t0 = time.time()
+    with open(log,"w",encoding="utf-8",errors="replace") as out, open(err,"w",encoding="utf-8",errors="replace") as errf:
+        p = subprocess.Popen([sys.executable,"-u","seq2seq_job_report.py","--task",task,"--epochs","2"],
+                             stdout=out, stderr=errf, env=env, cwd=str(HERE))
+        rc = p.wait()
+    with stat.open("a",encoding="utf-8") as f:
+        f.write(f"exit={rc} {task} elapsed_min={(time.time()-t0)/60:.2f} ended={time.strftime('%H:%M:%S')}\n")
+    return rc
+rc1 = run("report_plag")
+rc2 = run("report_ai") if rc1 == 0 else 1
+(HERE / "REPORT_TRAIN_DONE.flag").write_text(f"plag={rc1} ai={rc2}\n", encoding="utf-8")

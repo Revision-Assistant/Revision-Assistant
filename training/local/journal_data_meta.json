@@ -1,0 +1,21 @@
+{
+  "source": "unarXive citrec open arXiv-derived blobs only",
+  "labels": [
+    "structure_ok",
+    "numerical_clear",
+    "novelty_ok",
+    "methods_concrete",
+    "selective_ready",
+    "ieee_craft"
+  ],
+  "n_total": 40000,
+  "label_positive_counts": {
+    "novelty_ok": 39788,
+    "ieee_craft": 30423,
+    "structure_ok": 9071,
+    "numerical_clear": 1469,
+    "selective_ready": 2116,
+    "methods_concrete": 3133
+  },
+  "note": "Weak labels for readiness *heuristics* only \u2014 not acceptance probability, not Scimago/Clarivate quartiles, not affiliated with IEEE/Elsevier."
+}

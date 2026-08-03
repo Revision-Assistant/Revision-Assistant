@@ -1,0 +1,44 @@
+{
+  "threshold": 0.55,
+  "thresholds": {
+    "1": 0.55,
+    "2": 0.55,
+    "3": 0.55
+  },
+  "base_model": "allenai/scibert_scivocab_uncased",
+  "max_len": 96,
+  "num_epochs": 3,
+  "labels": [
+    "none",
+    "numerical_ambiguity",
+    "publication_issue",
+    "novelty_issue"
+  ],
+  "test_macro_precision": 0.9955631447299272,
+  "test_macro_recall": 0.9966948148948124,
+  "test_macro_f1": 0.996124676084053,
+  "test_issue_precision": 0.995229642777901,
+  "test_issue_recall": 0.9983307367015357,
+  "test_issue_f1": 0.9967777777777778,
+  "test_issue_auc": 0.9994281464031068,
+  "test_per_class_auc": {
+    "numerical_ambiguity": 0.9999369309842113,
+    "publication_issue": 0.9999273817182374,
+    "novelty_issue": 0.9999737853019018
+  },
+  "n_train": 90000,
+  "n_val": 15000,
+  "n_test": 15000,
+  "train_minutes": 77.012782116731,
+  "hard_eval": {
+    "slice": "quality_hard_eval.jsonl (12,386 rows: fresh unarXive blobs 400k-650k, unseen paraphrase templates, hard negatives)",
+    "any_issue_precision": 0.989,
+    "any_issue_recall": 0.677,
+    "any_issue_f1": 0.804,
+    "fp_rate_natural_clean": 0.009,
+    "fp_rate_hard_negatives": 0.021,
+    "recall_natural_weak_label_positives": 0.988,
+    "recall_unseen_template_positives": 0.443,
+    "note": "Weak-label test metrics (~0.996 F1) overstate quality; this harder slice is the honest reference. Precision-first: false flags are rare, but recall drops on phrasings unlike the training templates."
+  }
+}

@@ -1,0 +1,43 @@
+﻿HARD TRAIN RESULTS
+Generated: 2026-08-02T12:11:30.6305060+05:30
+
+Keep the machine awake until you verify both report_* artifacts below.
+
+=== report_plag (PRIMARY — DONE) ===
+epochs: 3
+max-train: 20000 (14332 rows after entity filter)
+  epoch 1.0: 1.9520841836929321
+  epoch 2.0: 1.9342061281204224
+  epoch 3.0: 1.9290446043014526
+wall: trained in 37.8 min
+path: C:\Users\subha\Desktop\plag and AI\training\local\rewrite_best\report_plag\model.safetensors
+bytes: 307867048
+mtime: 08/02/2026 12:02:54
+baseline fast-run eval_loss: ~2.079 (1 epoch / max-train 5500)
+
+=== report_ai ===
+epochs: 3
+max-train: 10000
+task=report_ai train=1676 val=221 cuda=True
+  epoch 1.0: 2.977931499481201
+  epoch 2.0: 2.9539952278137207
+  epoch 3.0: 2.94897723197937
+wall: trained in 5.1 min
+path: C:\Users\subha\Desktop\plag and AI\training\local\rewrite_best\report_ai\model.safetensors
+bytes: 307867048
+mtime: 08/02/2026 12:11:18
+baseline fast-run eval_loss: ~3.031 (2 epochs / max-train 4000)
+
+=== base plag / ai ===
+Not re-hardened this session (optional). Existing:
+  rewrite_best/plag  (mtime 08/01/2026 22:16:01)
+  rewrite_best/ai    (mtime 08/01/2026 22:25:03)
+
+=== logs ===
+training/local/train_report_plag_hard.log
+training/local/train_report_ai_hard.log
+
+report_ai exclusive COMPLETE 2026-08-02 12:11:38
+  [A{'eval_loss': 2.94897723197937, 'eval_runtime': 3.5927, 'eval_samples_per_second': 61.514, 'eval_steps_per_second': 7.794, 'epoch': 3.0}
+  path=c:\Users\subha\Desktop\plag and AI\training\local\rewrite_best\report_ai
+  model.safetensors mtime=2026-08-02 12:11:18 bytes=307867048

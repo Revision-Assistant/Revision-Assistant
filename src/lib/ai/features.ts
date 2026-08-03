@@ -5,29 +5,24 @@
 
 import type { AIFeatures, ParsedPaper } from '../../types';
 
+/**
+ * Genuine hedging: the writer is softening a claim's certainty. Deliberately excludes words
+ * like "significant", "various", "numerous", "generally" — these are ordinary academic
+ * vocabulary (e.g. "statistically significant") and treating them as hedges flagged too much
+ * normal STEM prose as AI-sounding.
+ */
 const HEDGE_WORDS = [
-  'may',
   'might',
-  'could',
   'possibly',
   'perhaps',
   'seemingly',
   'apparently',
   'potentially',
   'arguably',
-  'likely',
-  'unlikely',
-  'suggests that',
   'it is possible',
   'in some cases',
-  'generally',
-  'relatively',
-  'somewhat',
-  'fairly',
-  'quite',
-  'various',
-  'numerous',
-  'significant', // overused filler in AI text
+  'could potentially',
+  'may or may not',
 ];
 
 export function computeAIFeatures(
@@ -84,7 +79,11 @@ export function computeAIFeatures(
 }
 
 /** Template explanation when LLM is unavailable */
-export function localAIExplanation(features: AIFeatures, text: string): string {
+export function localAIExplanation(
+  features: AIFeatures,
+  text: string,
+  origin?: 'ai_report' | 'local_heuristic' | null
+): string {
   const tips: string[] = [];
   if (features.sentenceLengthVariance < 15) {
     tips.push(
@@ -114,8 +113,14 @@ export function localAIExplanation(features: AIFeatures, text: string): string {
       'Detector flagged this passage. Add personal analytic voice: what *you* did, observed, or decided, with specifics only you would know.'
     );
   }
+  const lead =
+    origin === 'ai_report'
+      ? 'Your AI writing report flagged this passage. Why it may read as machine-generated:\n• '
+      : origin === 'local_heuristic'
+        ? 'Local voice heuristics flagged this passage (not a vendor AI score). Why it may read as machine-generated:\n• '
+        : 'Why this may read as machine-generated:\n• ';
   return (
-    'Why this may read as machine-generated:\n• ' +
+    lead +
     tips.join('\n• ') +
     '\n\nDo not try to "beat" a detector score. Revise for clarity and ownership of the ideas.'
   );

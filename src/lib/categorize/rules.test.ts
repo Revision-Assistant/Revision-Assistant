@@ -71,6 +71,9 @@ assert(
   finding.category === 'missing_in_text_citation',
   `expected missing_in_text_citation, got ${finding.category}`
 );
+assert(finding.reportOrigin === 'similarity_report', 'default similarity origin');
+assert(finding.sources?.length === 1, 'sources copied onto finding');
+assert(finding.reportText?.includes('Convolutional'), 'reportText preserved');
 
 // Student paper never proposes citation path as needs_new_citation
 const student: AlignedSpan = {
@@ -104,18 +107,18 @@ const rf = categorizeSimilaritySpan(refSpan, paper);
 assert(rf.category === 'reference_entry', 'refs section → reference_entry');
 assert(rf.isInformational, 'reference_entry is informational');
 
-// Sub-1% sources are fragments, not passages — informational, not "needs a citation"
+// Sub-2% sources are fragments, not passages — informational, not "needs a citation"
 const trivial: AlignedSpan = {
   ...span,
   sources: [
     {
       title: 'Some unrelated conference paper about other things',
       url: 'https://example.org/other',
-      percentage: 0.5,
+      percentage: 1.5,
       sourceType: 'publication',
     },
   ],
-  matchPct: 0.5,
+  matchPct: 1.5,
   positionOnly: true,
 };
 const tf = categorizeSimilaritySpan(trivial, paper);

@@ -50,7 +50,8 @@ export function findOriginalityStart(pages: PositionedPage[]): number {
  * the caller should use the text-scraping path instead.
  */
 export function isBadgeStyleReport(pages: PositionedPage[], originalityStart: number): boolean {
-  const lastBody = originalityStart > 0 ? originalityStart - 1 : pages.length;
+  const lastPage = pages.reduce((m, p) => Math.max(m, p.pageNumber), 0);
+  const lastBody = originalityStart > 0 ? originalityStart - 1 : lastPage;
   const bodyPages = pages.filter((p) => p.pageNumber >= 2 && p.pageNumber <= lastBody);
   if (bodyPages.length === 0) return false;
 
@@ -67,7 +68,8 @@ export function isBadgeStyleReport(pages: PositionedPage[], originalityStart: nu
 }
 
 export function extractBadges(pages: PositionedPage[], originalityStart: number): Badge[] {
-  const lastBody = originalityStart > 0 ? originalityStart - 1 : pages.length;
+  const lastPage = pages.reduce((m, p) => Math.max(m, p.pageNumber), 0);
+  const lastBody = originalityStart > 0 ? originalityStart - 1 : lastPage;
   const badges: Badge[] = [];
 
   for (const p of pages) {

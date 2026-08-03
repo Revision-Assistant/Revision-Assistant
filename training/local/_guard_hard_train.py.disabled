@@ -1,0 +1,135 @@
+﻿"""Guarded harder rewrite training: report_plag -> report_ai -> plag -> ai."""
+import os, sys, time, subprocess, ctypes
+from pathlib import Path
+
+HERE = Path(r"c:\Users\subha\Desktop\plag and AI\training\local")
+os.chdir(HERE)
+RESULTS = HERE / "HARD_TRAIN_RESULTS.txt"
+
+try:
+    ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+except Exception:
+    pass
+
+
+def log(msg: str) -> None:
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+    print(line, flush=True)
+    with RESULTS.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def pids_cmdline():
+    out = []
+    try:
+        r = subprocess.check_output(
+            ["wmic", "process", "where", "name='python.exe'", "get", "ProcessId,CommandLine", "/FORMAT:LIST"],
+            text=True,
+            errors="replace",
+        )
+    except Exception:
+        return out
+    cur = {}
+    for line in r.splitlines():
+        line = line.strip()
+        if not line:
+            if cur.get("ProcessId") and cur.get("CommandLine"):
+                out.append((int(cur["ProcessId"]), cur["CommandLine"]))
+            cur = {}
+            continue
+        if "=" in line:
+            k, v = line.split("=", 1)
+            cur[k] = v
+    if cur.get("ProcessId") and cur.get("CommandLine"):
+        out.append((int(cur["ProcessId"]), cur["CommandLine"]))
+    return out
+
+
+def kill_competitors(protect: set[int]) -> None:
+    markers = (
+        "train_rewrite.py",
+        "train_rw_job.py",
+        "_run_train.py",
+        "_run_report",
+        "_guard_train.py",
+    )
+    for pid, cmd in pids_cmdline():
+        if pid in protect or pid == os.getpid():
+            continue
+        if any(m in cmd for m in markers):
+            # never kill ourselves / keepalive / quality prep
+            if "_guard_hard_train.py" in cmd or "keepalive.py" in cmd or "prepare_quality" in cmd:
+                continue
+            try:
+                os.kill(pid, 9)
+                log(f"hard-guard killed competitor pid={pid}")
+            except Exception as e:
+                log(f"hard-guard kill fail pid={pid}: {e}")
+
+
+def run_task(task: str, epochs: str, max_train: str, protect_base: set[int]) -> int:
+    log_path = HERE / f"train_{task}_hard.log"
+    env = os.environ.copy()
+    env["TF_CPP_MIN_LOG_LEVEL"] = "3"
+    env["PYTHONUNBUFFERED"] = "1"
+    t0 = time.time()
+    log(f"START {task} epochs={epochs} max-train={max_train}")
+    with log_path.open("w", encoding="utf-8", errors="replace") as f:
+        p = subprocess.Popen(
+            [
+                sys.executable,
+                "-u",
+                "train_rw_job.py",
+                "--task",
+                task,
+                "--epochs",
+                epochs,
+                "--max-train",
+                max_train,
+            ],
+            stdout=f,
+            stderr=subprocess.STDOUT,
+            env=env,
+            cwd=str(HERE),
+        )
+        protect = set(protect_base) | {os.getpid(), p.pid}
+        while p.poll() is None:
+            kill_competitors(protect)
+            try:
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+            except Exception:
+                pass
+            time.sleep(3)
+        rc = p.returncode if p.returncode is not None else -1
+    mins = (time.time() - t0) / 60
+    log(f"END {task} exit={rc} elapsed_min={mins:.1f}")
+    return rc
+
+
+def main() -> None:
+    RESULTS.write_text(
+        f"HARD TRAIN START (guarded) {time.strftime('%Y-%m-%d %H:%M:%S')}\n",
+        encoding="utf-8",
+    )
+    protect = {os.getpid()}
+    kill_competitors(protect)
+    time.sleep(2)
+
+    jobs = [
+        ("report_plag", "3", "20000"),
+        ("report_ai", "3", "10000"),
+        ("plag", "3", "20000"),
+        ("ai", "3", "10000"),
+    ]
+    for i, (task, epochs, max_train) in enumerate(jobs):
+        rc = run_task(task, epochs, max_train, protect)
+        if rc != 0 and task.startswith("report_"):
+            log(f"ABORT after {task} failure")
+            sys.exit(rc if rc > 0 else 1)
+        if rc != 0:
+            log(f"WARN non-report task {task} failed; continuing")
+    log("HARD TRAIN COMPLETE")
+
+
+if __name__ == "__main__":
+    main()

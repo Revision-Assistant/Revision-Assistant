@@ -1,0 +1,87 @@
+{
+  "ok": true,
+  "model": "gemini-flash-latest",
+  "parsed": {
+    "auditor_issues": [
+      {
+        "issue": "Nested interactive element inside ARIA button role",
+        "screen": "upload",
+        "severity": "high",
+        "why": "FileSlot wraps the drop zone in role='button' with tabIndex={0}, but contains a nested 'Clear' <button>. This violates ARIA HTML structure rules and causes screen readers to misannounce controls.",
+        "fix": "Change the outer FileSlot container from role='button' to a group/region div, and attach file input triggers explicitly to an inner trigger button or label."
+      },
+      {
+        "issue": "Auto-wipe timer lacks pre-wipe confirmation or warning modal",
+        "screen": "global",
+        "severity": "high",
+        "why": "The 10-minute idle privacy session automatically wipes all manuscript text, edits, and findings without an interactive warning modal allowing the user to extend session time.",
+        "fix": "Add a pre-wipe dialog trigger at 2 minutes remaining with an 'Extend session' button to prevent unexpected data loss while reading."
+      },
+      {
+        "issue": "Export menu accessibility missing ARIA keyboard navigation",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "ExportMenu uses role='menu' and role='menuitem' on drop-down buttons, but lacks standard keyboard arrow key navigation (Up/Down/Home/End) inside the panel.",
+        "fix": "Implement arrow key focus management inside ExportMenu or change roles from menu/menuitem to plain collapsible container elements."
+      },
+      {
+        "issue": "Confusing view snapping on page navigation",
+        "screen": "paper_view",
+        "severity": "medium",
+        "why": "jumpToPage in PaperView automatically forces showRevised to false whenever an open finding is selected on that page, surprising users who explicitly enabled Revised view.",
+        "fix": "Preserve the user's explicit showRevised toggle state during page jumps instead of implicitly switching text modes."
+      },
+      {
+        "issue": "Misleading Q1/Q2 quartile branding despite disclaimers",
+        "screen": "journal",
+        "severity": "medium",
+        "why": "Labeling score cards as 'Q1-like bar' and 'Q2-like bar' creates false authority that conflicts directly with the disclaimer stating it is merely an internal checklist.",
+        "fix": "Rename card labels to objective terms like 'High-rigour checklist' and 'Standard checklist' to avoid mimicking commercial journal quartile ranks."
+      },
+      {
+        "issue": "Batched grammar findings break keyboard list navigation index",
+        "screen": "findings_queue",
+        "severity": "low",
+        "why": "When grammarBatched is active in the 'Everything' filter view, individual open grammar findings are omitted from the visible array, causing relative arrow key navigation (j/k) to skip hidden items unpredictably.",
+        "fix": "Include batched items in the navigation sequence or clearly lock navigation to the parent summary card."
+      }
+    ],
+    "first_time_user_confusions": [
+      {
+        "issue": "Lack of Word DOCX export option for revised manuscript",
+        "screen": "workspace",
+        "severity": "high",
+        "why": "The user edited findings in the app and wants to submit a revised Word draft to their university advisor, but Export only offers a .txt change log or a watermarked PDF.",
+        "fix": "Add a .docx export option that outputs the revised text with standard manuscript styling."
+      },
+      {
+        "issue": "Strict PDF restriction for similarity and AI reports",
+        "screen": "upload",
+        "severity": "high",
+        "why": "The user attempted to upload an HTML or DOCX Turnitin report provided by their university, but the slot rejected it with '.pdf only' without explanation.",
+        "fix": "Provide clearer slot helper copy noting that Turnitin/iThenticate reports must be printed or saved to PDF before uploading."
+      },
+      {
+        "issue": "'LLM humanize' button copy triggers academic integrity fear",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "Seeing the label 'Draft rewrite (LLM humanize)' makes a PhD student worry that using the feature will violate university rules against AI-generated writing bypasses.",
+        "fix": "Relabel the button to 'Rephrase span' or 'Academic restatement' to emphasize stylistic clarity over AI evasiveness."
+      },
+      {
+        "issue": "Unclear scope of 'Apply all fixes (N)' button",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "The student hesitates to click 'Apply all fixes' because it does not state whether it will alter citation markers or rewrite paragraphs automatically.",
+        "fix": "Add descriptive tooltip/subtext clarifying that 'Apply all fixes' only applies safe, high-confidence grammar and typo corrections."
+      },
+      {
+        "issue": "Confusion between Turnitin percentage and tool findings",
+        "screen": "findings_queue",
+        "severity": "low",
+        "why": "The student expected the queue to match their exact Turnitin percentage index directly, but sees categories like 'Common phrase' and 'Methods boilerplate' mixed in.",
+        "fix": "Add an informational summary header explaining how flagged report matches are grouped into actionable vs. non-actionable academic categories."
+      }
+    ]
+  }
+}

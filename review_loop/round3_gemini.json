@@ -1,0 +1,80 @@
+{
+  "ok": true,
+  "model": "gemini-flash-latest",
+  "parsed": {
+    "auditor_issues": [
+      {
+        "issue": "Missing focus restoration on Export menu close",
+        "screen": "workspace",
+        "severity": "high",
+        "why": "In App.tsx (ExportMenu), closing the menu via Escape or selecting an option sets open to false without returning focus to the trigger button, causing keyboard users to lose their focus position.",
+        "fix": "Maintain a ref to the trigger button and call triggerRef.current?.focus() when the menu closes via keyboard or item activation."
+      },
+      {
+        "issue": "Keyboard navigation listener attached to non-focusable list container",
+        "screen": "findings_queue",
+        "severity": "high",
+        "why": "In FindingsQueue.tsx, onListKeyDown handles ArrowUp/ArrowDown and j/k keys on the findings list wrapper, but the wrapper lacks tabIndex={0} or a focusable role, making keyboard shortcuts unreachable unless an inner control is active.",
+        "fix": "Add tabIndex={0}, role=\"region\", and an aria-label=\"Findings queue\" to the list container div so keyboard users can focus and navigate the cards directly."
+      },
+      {
+        "issue": "Unpredictable view state mutation when jumping pages in PaperView",
+        "screen": "paper_view",
+        "severity": "medium",
+        "why": "In PaperView.tsx, calling jumpToPage while showRevised is true automatically calls setShowRevised(false) if an open finding exists on that page, forcibly switching the user back to Original view without explicit confirmation.",
+        "fix": "Preserve the active showRevised toggle during page navigation, or display an inline notification explaining that open highlights are only visible in original mode."
+      },
+      {
+        "issue": "Grammar batch card suppresses individual items in Everything view without inline expansion",
+        "screen": "findings_queue",
+        "severity": "medium",
+        "why": "When kindFilter === 'all', individual grammar findings are hidden from the queue list behind a single batch card. Users cannot inspect specific grammar flags without manually changing the top filter tab to Grammar.",
+        "fix": "Provide an inline toggle on the batch card to expand and inspect individual grammar flags within the Everything view."
+      },
+      {
+        "issue": "ScoreCard components lack visible numeric scale bounds",
+        "screen": "journal",
+        "severity": "low",
+        "why": "In JournalReadiness.tsx, score cards pass role=\"meter\" and aria-valuenow to accessibility trees, but the visible UI renders raw numbers (e.g. 72) without a visible '/100' indicator.",
+        "fix": "Add explicit visible '/100' baseline text inside each score card display."
+      }
+    ],
+    "first_time_user_confusions": [
+      {
+        "issue": "Rejection of legacy .doc files and ambiguity around Turnitin web links",
+        "screen": "upload",
+        "severity": "high",
+        "why": "Task 1 think-aloud: The user has a university .doc paper and a web link to a Turnitin report. Dropping .doc triggers a hard error, and the similarity slot requires a PDF download, leaving the user unsure how to proceed.",
+        "fix": "Add clear helper text next to the file slots explaining how to 'Save As .docx' in Word and how to 'Print to PDF' from Turnitin portals."
+      },
+      {
+        "issue": "Confusion over 'Reads as AI-written' flags when no AI report was uploaded",
+        "screen": "findings_queue",
+        "severity": "high",
+        "why": "Task 2 think-aloud: The user sees 'Reads as AI-written' cards and worries their university flagged them, unaware that this tag comes from the app's internal heuristic model rather than an external report.",
+        "fix": "Label card headers explicitly with the source (e.g., 'Internal heuristic detector' vs 'Uploaded AI report')."
+      },
+      {
+        "issue": "Disorientation when applying fixes in Revised view snaps screen back to Original view",
+        "screen": "paper_view",
+        "severity": "medium",
+        "why": "Task 3 think-aloud: While reviewing accepted changes in Revised view, clicking a page chip snaps the view back to Original mode to display open findings, making the user feel like their fixes disappeared.",
+        "fix": "Keep the view on Revised mode when clicking page chips and highlight the modified text segments for that page."
+      },
+      {
+        "issue": "Fear that 'IEEE-oriented' score implies wrong journal formatting",
+        "screen": "journal",
+        "severity": "medium",
+        "why": "Task 4 think-aloud: The student is targeting a biology journal and worries that an 'IEEE-oriented' score card means the assistant is evaluating their paper against engineering standards.",
+        "fix": "Rename or contextualize the card header to generic domain metrics (e.g., 'Technical & structural craft') and explain field applicability."
+      },
+      {
+        "issue": "Unsure how to integrate exported .txt change log back into Word source document",
+        "screen": "workspace",
+        "severity": "medium",
+        "why": "Task 5 think-aloud: The user expected a downloadable DOCX file with tracked changes. Seeing only a text file and watermarked PDF leaves them confused on how to turn in their revised manuscript.",
+        "fix": "Add a brief modal or callout in the export menu with step-by-step instructions on applying the decision log to Microsoft Word or LaTeX."
+      }
+    ]
+  }
+}

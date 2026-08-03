@@ -16,10 +16,22 @@ import { categorizeAll, needsLlmExplanation } from './categorize/rules';
 import { computeAIFeatures, localAIExplanation } from './ai/features';
 import { UnsupportedReportFormatError } from './pdf/fingerprint';
 import { checkGrammar } from './grammar/languageTool';
+import { filterGrammarFindingsWithLlm } from './grammar/grammarFilterClient';
 import { enrichCitationSuggestions } from './citation/crossref';
 import { detectCitationNeed } from './citation/citationNeed';
 import { detectCitationNeedSmart } from './citation/citationNeedModel';
-import { scanLocalAiSpans } from './ai/localScan';
+import { detectManuscriptQuality } from './quality/manuscriptQuality';
+import { detectManuscriptQualitySmart } from './quality/manuscriptQualityModel';
+import { detectNumericalInconsistencies } from './quality/numericalInconsistency';
+import { scanAiSpansSmart } from './ai/aiDetectModel';
+import {
+  EXPLAIN_MAX_CONTEXT_CHARS,
+  EXPLAIN_MAX_PAYLOAD_CHARS,
+  EXPLAIN_MAX_SPANS,
+  EXPLAIN_MAX_TEXT_CHARS,
+  truncateForExplain,
+} from './files/limits';
+import { reportDebugForExplain } from './reportDebug';
 
 export type ProgressCb = (p: PipelineProgress) => void;
 
@@ -40,6 +52,11 @@ export interface PipelineInputs {
    * Off by default so first-paint analysis stays light.
    */
   requestCitationModel?: boolean;
+  /**
+   * If true (default), run the in-browser manuscript-quality model
+   * (numerical / publication / novelty-claim flags). Falls back to rules.
+   */
+  requestQualityModel?: boolean;
   /** Supabase access token for authenticated rate-limited calls */
   accessToken?: string | null;
 }
@@ -49,24 +66,38 @@ async function explainViaApi(
   paperContext: { citationStyle: string; surrounding: Record<string, string> },
   accessToken?: string | null
 ): Promise<Finding[]> {
-  const escalated = findings.filter(needsLlmExplanation);
+  const escalated = findings.filter(needsLlmExplanation).slice(0, EXPLAIN_MAX_SPANS);
   if (escalated.length === 0) return findings;
 
-  const payload = {
-    spans: escalated.map((f) => ({
+  const buildSpans = (list: typeof escalated) =>
+    list.map((f) => ({
       id: f.id,
       kind: f.kind,
       category: f.category,
-      text: f.text,
-      sourceTitle: f.sourceTitle,
+      text: truncateForExplain(f.text, EXPLAIN_MAX_TEXT_CHARS),
+      sourceTitle: f.sourceTitle
+        ? truncateForExplain(f.sourceTitle, 200)
+        : f.sourceTitle,
       sourceUrl: f.sourceUrl,
       sourceType: f.sourceType,
       matchPct: f.matchPct,
       aiFeatures: f.aiFeatures,
-      context: paperContext.surrounding[f.id] || '',
-    })),
-    citationStyle: paperContext.citationStyle,
-  };
+      reportDebug: reportDebugForExplain(f),
+      context: truncateForExplain(
+        paperContext.surrounding[f.id] || '',
+        EXPLAIN_MAX_CONTEXT_CHARS
+      ),
+    }));
+
+  let spans = buildSpans(escalated);
+  let payload = { spans, citationStyle: paperContext.citationStyle };
+  let body = JSON.stringify(payload);
+  // Stay under Netlify function body limits on the free public MVP.
+  while (body.length > EXPLAIN_MAX_PAYLOAD_CHARS && spans.length > 4) {
+    spans = spans.slice(0, Math.ceil(spans.length * 0.7));
+    payload = { spans, citationStyle: paperContext.citationStyle };
+    body = JSON.stringify(payload);
+  }
 
   try {
     const res = await fetch('/.netlify/functions/explain', {
@@ -75,7 +106,7 @@ async function explainViaApi(
         'Content-Type': 'application/json',
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
-      body: JSON.stringify(payload),
+      body,
     });
 
     if (!res.ok) {
@@ -124,15 +155,37 @@ export async function runPipeline(
     onProgress?.({ stage, message, percent });
   };
 
-  report('parsing_paper', inputs.paperIsDocx ? 'Parsing paper DOCX…' : 'Parsing paper PDF…', 5);
+  // Keep a private copy before parsers (pdf.js / mammoth) touch the buffer — needed for
+  // layout-preserving PDF export and safe even when extractors already clone internally.
+  const sourceBytes = inputs.paperFile.slice(0);
+
+  report(
+    'parsing_paper',
+    inputs.paperIsDocx
+      ? 'Extracting text from Word (.docx)…'
+      : 'Extracting text from PDF pages…',
+    5
+  );
   const paper = inputs.paperIsDocx
     ? await parsePaperFromDocx(inputs.paperFile)
     : await parsePaper(inputs.paperFile);
 
+  if (!paper.fullText.trim()) {
+    throw new Error(
+      'No extractable text found in the manuscript. If this is a scanned PDF, use a text-based export or DOCX.'
+    );
+  }
+
+  report(
+    'parsing_paper',
+    `Manuscript ready · ${paper.pageCount} page${paper.pageCount === 1 ? '' : 's'} · ${paper.fullText.length.toLocaleString()} characters`,
+    18
+  );
+
   let similarity = null;
   let ai = null;
 
-  report('parsing_reports', 'Parsing Turnitin reports…', 25);
+  report('parsing_reports', 'Reading optional similarity / AI report PDFs…', 25);
   try {
     if (inputs.similarityPdf) {
       // Paper is passed so badge positions can be mapped onto real offsets
@@ -154,7 +207,7 @@ export async function runPipeline(
 
   if (!similarity && !ai) {
     // Still useful: citation integrity only
-    report('categorizing', 'No Turnitin reports — checking citation integrity…', 70);
+    report('categorizing', 'No similarity reports — checking citation integrity…', 70);
   }
 
   report('aligning', 'Aligning flagged spans to your paper…', 45);
@@ -162,10 +215,11 @@ export async function runPipeline(
     ? alignSimilarityFlags(similarity.flags, paper)
     : { aligned: [], matchRate: 1 };
   let aiAligned = ai ? alignAIFlags(ai.flags, paper) : [];
-  // Force AI-path support even without a Turnitin AI PDF: local voice heuristics.
+  // Force AI-path support even without a Turnitin AI PDF: trained detector when
+  // VITE_AI_MODEL_ID is set, heuristic voice scan otherwise (handled inside).
   if (aiAligned.length === 0) {
     report('aligning', 'Scanning for machine-like prose (local AI assist)…', 50);
-    aiAligned = scanLocalAiSpans(paper);
+    aiAligned = await scanAiSpansSmart(paper);
   }
 
   if (similarity && simAligned.matchRate < 0.5 && similarity.flags.length > 0) {
@@ -185,13 +239,17 @@ export async function runPipeline(
   // Local explanations for AI + actionable items
   findings = findings.map((f) => {
     if (f.kind === 'ai' && f.aiFeatures && !f.explanation) {
-      return { ...f, explanation: localAIExplanation(f.aiFeatures, f.text) };
+      const origin =
+        f.reportOrigin === 'ai_report' || f.reportOrigin === 'local_heuristic'
+          ? f.reportOrigin
+          : null;
+      return { ...f, explanation: localAIExplanation(f.aiFeatures, f.text, origin) };
     }
     return f;
   });
 
-  // Claims needing attribution — always run deep model when available (forced support).
-  const wantCitationModel = inputs.requestCitationModel !== false;
+  // Deep citation-need model is opt-in (≈110 MB ONNX); App enables it explicitly.
+  const wantCitationModel = inputs.requestCitationModel === true;
   if (wantCitationModel) {
     report('citation_need', 'Running deep citation-need check (local model)…', 68);
     const citationFindings = await detectCitationNeedSmart(paper, {
@@ -208,17 +266,44 @@ export async function runPipeline(
     findings = findings.concat(detectCitationNeed(paper));
   }
 
-  // Grammar is always on
-  report('grammar_check', 'Checking grammar and style (LanguageTool)…', 72);
+  // Manuscript quality — numerical ambiguity, publication craft, novelty-claim phrasing
+  const wantQualityModel = inputs.requestQualityModel !== false;
+  if (wantQualityModel) {
+    report('manuscript_quality', 'Running manuscript-quality check (local model)…', 71);
+    const qualityFindings = await detectManuscriptQualitySmart(paper, {
+      onProgress: (done, total) => {
+        report(
+          'manuscript_quality',
+          `Manuscript-quality check… ${done}/${total}`,
+          71 + Math.round((done / Math.max(total, 1)) * 2)
+        );
+      },
+    });
+    findings = findings.concat(qualityFindings);
+  } else {
+    findings = findings.concat(detectManuscriptQuality(paper));
+  }
+
+  // Numerical inconsistency — same metric/unit with conflicting values (rules, high precision)
+  report('manuscript_quality', 'Checking numerical consistency…', 73);
+  findings = findings.concat(detectNumericalInconsistencies(paper));
+
+  // Grammar is always on (LanguageTool → local STEM/name filters → optional LLM keep/drop)
+  report('grammar_check', 'Checking grammar and style (LanguageTool)…', 74);
   try {
-    const grammarFindings = await checkGrammar(paper, {
+    let grammarFindings = await checkGrammar(paper, {
       onProgress: (done, total) => {
         report(
           'grammar_check',
           `Checking grammar and style (LanguageTool)… ${done}/${total}`,
-          72 + Math.round((done / Math.max(total, 1)) * 6)
+          74 + Math.round((done / Math.max(total, 1)) * 4)
         );
       },
+    });
+    report('grammar_check', 'Reviewing grammar with AI…', 79);
+    grammarFindings = await filterGrammarFindingsWithLlm(grammarFindings, {
+      accessToken: inputs.accessToken,
+      onProgress: (message) => report('grammar_check', message, 79),
     });
     findings = findings.concat(grammarFindings);
   } catch (err) {
@@ -262,7 +347,15 @@ export async function runPipeline(
   };
 
   report('done', 'Analysis complete', 100);
-  return { paper, similarity, ai, findings, meta };
+  return {
+    paper,
+    similarity,
+    ai,
+    findings,
+    meta,
+    sourceBytes,
+    sourceKind: inputs.paperIsDocx ? 'docx' : 'pdf',
+  };
 }
 
 export { UnsupportedReportFormatError };

@@ -1,0 +1,28 @@
+{
+  "threshold": 0.5,
+  "thresholds": {
+    "structure_ok": 0.5,
+    "numerical_clear": 0.5,
+    "novelty_ok": 0.5,
+    "methods_concrete": 0.5,
+    "selective_ready": 0.55,
+    "ieee_craft": 0.5
+  },
+  "labels": [
+    "structure_ok",
+    "numerical_clear",
+    "novelty_ok",
+    "methods_concrete",
+    "selective_ready",
+    "ieee_craft"
+  ],
+  "base_model": "allenai/scibert_scivocab_uncased",
+  "problem_type": "multi_label_classification",
+  "test_macro_f1": 0.920882611076118,
+  "test_micro_f1": 0.9814847678201716,
+  "test_mean_auc": 0.8737736064080326,
+  "train_size": 20000,
+  "epochs": 2,
+  "wall_seconds": 2563,
+  "disclaimer": "Heuristic readiness signal heads from open arXiv-derived text. Not acceptance probability; not official Q1/Q2; not IEEE-affiliated."
+}

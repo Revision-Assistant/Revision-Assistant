@@ -94,8 +94,8 @@ export function fingerprintReport(
 
   if (reportKind === 'unknown') {
     errors.push(
-      'Could not recognize this file as a Turnitin similarity or AI report. ' +
-        'Expected page-1 headers / section labels were not found.'
+      'Could not recognize this file as a similarity or AI writing report. ' +
+        'Expected headers / section labels were not found.'
     );
     return {
       ok: false,
@@ -108,7 +108,7 @@ export function fingerprintReport(
 
   if (reportKind === 'similarity') {
     if (countMatches(body, SIMILARITY_MARKERS.headers) < 1 && !badgeExport) {
-      errors.push('Missing Turnitin / Similarity header on early pages.');
+      errors.push('Missing Similarity / Originality header on early pages.');
     }
     if (
       countMatches(body, SIMILARITY_MARKERS.sections) < 1 &&
@@ -130,7 +130,7 @@ export function fingerprintReport(
   // Generic PDF that is just the paper re-uploaded
   if (/^\s*(abstract|introduction)\b/i.test(sample) && simScore < 2 && aiScore < 2 && !badgeExport) {
     errors.push(
-      'This looks like a research paper, not a Turnitin report. Upload the Similarity / AI report PDF from Turnitin.'
+      'This looks like a research paper, not a similarity report. Upload the originality / AI writing PDF from your checker, not the manuscript itself.'
     );
   }
 
@@ -163,7 +163,7 @@ export class UnsupportedReportFormatError extends Error {
   constructor(result: FingerprintResult) {
     super(
       result.errors.join(' ') ||
-        'Unsupported Turnitin report format. Parsing aborted to avoid incorrect advice.'
+        'Unsupported similarity report format. Parsing aborted to avoid incorrect advice.'
     );
     this.name = 'UnsupportedReportFormatError';
     this.details = result;
