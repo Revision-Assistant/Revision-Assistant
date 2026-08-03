@@ -77,7 +77,7 @@ scripts/eval_test_folder.ts
 
 # Quantized ONNX weights (>100MB) — host on Hugging Face Hub for production;
 # keep tokenizer/config JSON in public/models/** for local/dev wiring
-public/models/**/onnx/
+# public/models/**/onnx/  # tracked with Git LFS — see .gitattributes
 
 # Editor
 .vscode/*
