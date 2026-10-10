@@ -10,6 +10,7 @@ from telethon.sessions import StringSession
 from aiohttp import web
 from trading_ai_tutor import ask_trading_tutor
 from video_search_engine import search_learning_videos, get_curated_playlist, PLAYLIST_TOPICS
+from automated_course_harvester import run_autonomous_turbo_harvester
 
 load_dotenv()
 API_ID = int(os.getenv('API_ID'))
@@ -1167,6 +1168,9 @@ async def main():
 
     # Start Background Notification Daemon
     asyncio.create_task(notification_daemon(client))
+
+    # Start Autonomous Continuous Video Uploader Daemon inside the Bot
+    asyncio.create_task(run_autonomous_turbo_harvester(client))
 
     @client.on(events.NewMessage(pattern=r'^/(start|help|menu)$'))
     async def handle_menu(event):

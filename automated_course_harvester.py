@@ -196,25 +196,27 @@ async def main():
         await tg_client.disconnect()
         sys.exit(1)
 
+async def run_autonomous_turbo_harvester(tg_client):
+    """
+    Runs autonomously inside the Telegram Bot process 24/7.
+    Scans monitored trading channels and forwards streamable videos into 'learning' at max rate.
+    """
     community_cfg = load_community_config()
     learning_id = community_cfg["learning_id"]
 
     try:
         target_channel = await tg_client.get_entity(learning_id)
-        print(f"[+] Master 'learning' library connected (ID: {target_channel.id})\n", flush=True)
+        print(f"[+] Autonomous Turbo Harvester connected to 'learning' (ID: {target_channel.id})", flush=True)
     except Exception as e:
-        print(f"[!] Error accessing learning channel: {e}", flush=True)
-        await tg_client.disconnect()
-        sys.exit(1)
+        print(f"[!] Harvester error accessing learning channel: {e}", flush=True)
+        return
 
-    # 6 parallel channels simultaneously for maximum rate
     sem = asyncio.Semaphore(6)
 
     while True:
         try:
             cycle_start = datetime.now()
             tracker = load_tracker()
-            print(f"\n⚡ [TURBO CYCLE START] Scanning channels at {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}...", flush=True)
 
             all_targets = []
             for ch_name in CHANNELS_TO_MONITOR:
@@ -236,8 +238,6 @@ async def main():
             except Exception:
                 pass
 
-            print(f"[+] Found {len(all_targets)} source channels. Launching parallel batch stream...", flush=True)
-
             tasks = [
                 harvest_single_channel_turbo(tg_client, ch_name, entity, target_channel, tracker, sem)
                 for ch_name, entity in all_targets
@@ -248,18 +248,42 @@ async def main():
             tracker["last_run"] = cycle_start.isoformat()
             save_tracker(tracker)
 
-            print(f"\n🎉 [PASS COMPLETE] Added {total_new} streamable videos in this pass!", flush=True)
-            print(f"⏳ Sleeping 15 seconds before next scan pass...\n", flush=True)
-            await asyncio.sleep(15)
+            if total_new > 0:
+                print(f"[+] Autonomous Harvester forward-streamed {total_new} videos into 'learning'!", flush=True)
+
+            await asyncio.sleep(20)
 
         except Exception as cycle_err:
-            print(f"[!] Harvester cycle notice: {cycle_err}. Reconnecting in 10s...", flush=True)
+            print(f"[!] Harvester notice: {cycle_err}. Retrying in 10s...", flush=True)
             await asyncio.sleep(10)
-            try:
-                if not tg_client.is_connected():
-                    await tg_client.connect()
-            except Exception:
-                pass
+
+async def main():
+    sys.stdout.reconfigure(line_buffering=True)
+    if sys.stdout.encoding != 'utf-8':
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except AttributeError:
+            pass
+
+    print("="*65, flush=True)
+    print("🚀 TURBO-SPEED STREAMABLE VIDEO HARVESTER BOT ACTIVE", flush=True)
+    print("⚡ Mode: Streamable-Only Filter | Concurrency: 6 Channels | Batch: 25", flush=True)
+    print("="*65, flush=True)
+
+    session_string = os.getenv('SESSION_STRING', '').strip()
+    if not session_string:
+        print("[-] SESSION_STRING missing in .env", flush=True)
+        sys.exit(1)
+
+    tg_client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
+    await tg_client.connect()
+
+    if not await tg_client.is_user_authorized():
+        print("[-] Telegram user not authorized.", flush=True)
+        await tg_client.disconnect()
+        sys.exit(1)
+
+    await run_autonomous_turbo_harvester(tg_client)
 
 if __name__ == '__main__':
     asyncio.run(main())
