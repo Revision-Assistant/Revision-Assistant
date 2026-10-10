@@ -211,45 +211,55 @@ async def main():
     sem = asyncio.Semaphore(6)
 
     while True:
-        cycle_start = datetime.now()
-        tracker = load_tracker()
-        print(f"\n⚡ [TURBO CYCLE START] Scanning channels at {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}...", flush=True)
+        try:
+            cycle_start = datetime.now()
+            tracker = load_tracker()
+            print(f"\n⚡ [TURBO CYCLE START] Scanning channels at {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}...", flush=True)
 
-        all_targets = []
-        for ch_name in CHANNELS_TO_MONITOR:
+            all_targets = []
+            for ch_name in CHANNELS_TO_MONITOR:
+                try:
+                    ent = await tg_client.get_entity(ch_name)
+                    all_targets.append((ch_name, ent))
+                except Exception:
+                    pass
+
             try:
-                ent = await tg_client.get_entity(ch_name)
-                all_targets.append((ch_name, ent))
+                async for d in tg_client.iter_dialogs():
+                    if d.is_channel or d.is_group:
+                        t_lower = d.name.lower()
+                        if any(k in t_lower for k in ["trading", "forex", "crypto", "stock", "course", "ict", "smc", "price action"]):
+                            if "learning" not in t_lower and "today" not in t_lower and "yesterday" not in t_lower:
+                                ch_title = d.name.replace(" ", "_")
+                                if not any(t[0] == ch_title for t in all_targets):
+                                    all_targets.append((ch_title, d.entity))
             except Exception:
                 pass
 
-        try:
-            async for d in tg_client.iter_dialogs():
-                if d.is_channel or d.is_group:
-                    t_lower = d.name.lower()
-                    if any(k in t_lower for k in ["trading", "forex", "crypto", "stock", "course", "ict", "smc", "price action"]):
-                        if "learning" not in t_lower and "today" not in t_lower and "yesterday" not in t_lower:
-                            ch_title = d.name.replace(" ", "_")
-                            if not any(t[0] == ch_title for t in all_targets):
-                                all_targets.append((ch_title, d.entity))
-        except Exception:
-            pass
+            print(f"[+] Found {len(all_targets)} source channels. Launching parallel batch stream...", flush=True)
 
-        print(f"[+] Found {len(all_targets)} source channels. Launching parallel batch stream...", flush=True)
+            tasks = [
+                harvest_single_channel_turbo(tg_client, ch_name, entity, target_channel, tracker, sem)
+                for ch_name, entity in all_targets
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        tasks = [
-            harvest_single_channel_turbo(tg_client, ch_name, entity, target_channel, tracker, sem)
-            for ch_name, entity in all_targets
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+            total_new = sum(r for r in results if isinstance(r, int))
+            tracker["last_run"] = cycle_start.isoformat()
+            save_tracker(tracker)
 
-        total_new = sum(r for r in results if isinstance(r, int))
-        tracker["last_run"] = cycle_start.isoformat()
-        save_tracker(tracker)
+            print(f"\n🎉 [PASS COMPLETE] Added {total_new} streamable videos in this pass!", flush=True)
+            print(f"⏳ Sleeping 15 seconds before next scan pass...\n", flush=True)
+            await asyncio.sleep(15)
 
-        print(f"\n🎉 [PASS COMPLETE] Added {total_new} streamable videos in this pass!", flush=True)
-        print(f"⏳ Sleeping 15 seconds before next scan pass...\n", flush=True)
-        await asyncio.sleep(15)
+        except Exception as cycle_err:
+            print(f"[!] Harvester cycle notice: {cycle_err}. Reconnecting in 10s...", flush=True)
+            await asyncio.sleep(10)
+            try:
+                if not tg_client.is_connected():
+                    await tg_client.connect()
+            except Exception:
+                pass
 
 if __name__ == '__main__':
     asyncio.run(main())

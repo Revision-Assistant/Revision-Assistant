@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from aiohttp import web
+from trading_ai_tutor import ask_trading_tutor
+from video_search_engine import search_learning_videos, get_curated_playlist, PLAYLIST_TOPICS
 
 load_dotenv()
 API_ID = int(os.getenv('API_ID'))
@@ -1013,13 +1015,19 @@ def format_menu(progress):
         f"│ • [/backlog] — Pacing Audit & Catch-Up Plan\n"
         f"│ • [/harvester_status] — Streamable Scraper Status\n"
         f"└───────────────────────────────┘\n\n"
+        f"┌── 🤖 **AI TUTOR & VIDEO SEARCH** ────┐\n"
+        f"│ • [/ask] — Ask Any Trading Question\n"
+        f"│ • [/tutor] — Toggle 1-on-1 AI Coaching\n"
+        f"│ • [/search] — Search 900+ Videos by Keyword\n"
+        f"│ • [/playlist] — Curated Topic Catalogs\n"
+        f"└───────────────────────────────┘\n\n"
         f"┌── 🧠 **MASTERY & TOOLS** ────────────┐\n"
         f"│ • [/quiz] — Multiple-Choice Trading Quiz\n"
         f"│ • [/roadmap] — 8-Week Curriculum Roadmap\n"
         f"│ • [/links] — 10 Google Drive Masterclasses\n"
         f"│ • [/remind_test] — Test Automated Alerts\n"
         f"└───────────────────────────────┘\n\n"
-        f"💡 *Tip: Reply directly to any video in 'today' or 'yesterday' with your notes to auto-log!*"
+        f"💡 *Tip: Reply directly to any video in 'today' with a question to ask the AI Tutor!*"
     )
 
 def format_harvester_status():
@@ -1373,13 +1381,180 @@ async def main():
                 progress = load_progress()
                 await move_today_to_yesterday(client, progress, reason="manual")
                 await event.respond("📦 Moved to 'yesterday' catch-up channel! 'today' refreshed!")
+            elif "?" in text or any(w in text.lower().split() for w in ["what", "how", "why", "explain", "where", "can", "when"]):
+                # User asked a question on the video: AI Tutor responds!
+                v_ctx = {"title": reply_msg.message[:80] if reply_msg.message else "Active Video"}
+                ans = await ask_trading_tutor(text, context_video=v_ctx)
+                await event.reply(ans, link_preview=False)
             else:
                 resp = await complete_active_lesson(client, minutes=30, user_notes=text)
                 await event.respond(resp, link_preview=False)
 
         elif yesterday_channel_id and (chat_id == yesterday_channel_id or chat_id == -1000000000000 - yesterday_channel_id):
-            resp = await complete_catchup_lesson(client, reply_msg.id, minutes=30, user_notes=text)
-            await event.respond(resp, link_preview=False)
+            if "?" in text or any(w in text.lower().split() for w in ["what", "how", "why", "explain", "where", "can", "when"]):
+                v_ctx = {"title": reply_msg.message[:80] if reply_msg.message else "Catch-Up Video"}
+                ans = await ask_trading_tutor(text, context_video=v_ctx)
+                await event.reply(ans, link_preview=False)
+            else:
+                resp = await complete_catchup_lesson(client, reply_msg.id, minutes=30, user_notes=text)
+                await event.respond(resp, link_preview=False)
+
+    # 1-on-1 Conversational AI Tutor in Private Chat
+    @client.on(events.NewMessage)
+    async def handle_private_tutor(event):
+        if not event.is_private:
+            return
+        text = (event.raw_text or "").strip()
+        if not text or text.startswith('/'):
+            return
+        progress = load_progress()
+        if progress.get("tutor_mode", False):
+            reply_msg = await event.get_reply_message()
+            v_ctx = None
+            if reply_msg and reply_msg.message:
+                v_ctx = {"title": reply_msg.message[:80]}
+            ans = await ask_trading_tutor(text, context_video=v_ctx)
+            await event.reply(ans, link_preview=False)
+
+    @client.on(events.NewMessage(pattern=r'^/(tutor|mentor)(?:\s+(on|off|stop))?$'))
+    async def handle_tutor_mode(event):
+        arg = (event.pattern_match.group(2) or "").lower().strip()
+        progress = load_progress()
+        if arg in ["off", "stop"]:
+            progress["tutor_mode"] = False
+            save_progress(progress)
+            await event.respond("⏹️ **1-on-1 AI Tutor Mode Turned OFF.**\nSend `/tutor` anytime to reactivate coaching.")
+            return
+
+        progress["tutor_mode"] = True
+        save_progress(progress)
+        await event.respond(
+            "🎓 **1-ON-1 AI TRADING MENTOR MODE ACTIVATED!** 🤖🚀\n\n"
+            "I am now listening to all your trading questions. Just send any message or question directly in this chat to receive instant institutional breakdowns, execution rules, and setup checklists!\n\n"
+            "• Ask about Order Blocks, FVGs, Liquidity Sweeps, Market Structure, or Risk Management.\n"
+            "• Send `/tutor off` anytime to return to standard command mode."
+        )
+
+    @client.on(events.NewMessage(pattern=r'^/ask(?:\s+(.+))?$'))
+    async def handle_ask(event):
+        question = (event.pattern_match.group(1) or "").strip()
+        if not question:
+            await event.respond(
+                "❓ **HOW TO USE AI TRADING TUTOR:**\n\n"
+                "Send `/ask <your question>` or reply directly to any video in 'today' with your question!\n\n"
+                "**Examples:**\n"
+                "• `/ask How do I confirm an order block before entering?`\n"
+                "• `/ask Explain difference between BOS and CHoCH`\n"
+                "• `/ask What is a Judas Swing during London open?`\n"
+                "• `/ask Give me a high-probability SMC trade checklist`\n\n"
+                "💡 *Or send `/tutor` to toggle continuous 1-on-1 coaching mode!*"
+            )
+            return
+
+        reply_msg = await event.get_reply_message()
+        v_ctx = None
+        if reply_msg and reply_msg.message:
+            v_ctx = {"title": reply_msg.message[:80]}
+
+        ans = await ask_trading_tutor(question, context_video=v_ctx)
+        await event.respond(ans, link_preview=False)
+
+    @client.on(events.NewMessage(pattern=r'^/search(?:\s+(.+))?$'))
+    async def handle_search(event):
+        query = (event.pattern_match.group(1) or "").strip()
+        if not query:
+            await event.respond(
+                "🔍 **VIDEO LIBRARY SEARCH:**\n\n"
+                "Search over 900+ streamable trading videos in 'learning' by keyword!\n\n"
+                "**Examples:**\n"
+                "• `/search ict` — Find ICT & Smart Money Concept videos\n"
+                "• `/search order block` — Find Order Block masterclasses\n"
+                "• `/search scalping` — Find fast intraday execution lessons\n"
+                "• `/search price action` — Find support/resistance & chart reading\n\n"
+                "👉 Or send `/playlist` to view curated topic catalogs!"
+            )
+            return
+
+        await event.respond(f"🔍 Searching 900+ library videos for *'{query}'*...")
+        matches = await search_learning_videos(client, query, limit=5)
+        if not matches:
+            await event.respond(f"❌ No matching videos found for *'{query}'*. Try a broader term like `smc`, `price action`, `candle`, or send `/playlist`.")
+            return
+
+        lines = [f"🎬 **TOP SEARCH MATCHES FOR:** *'{query}'*\n"]
+        for idx, m in enumerate(matches, 1):
+            lines.append(f"{idx}️⃣ [{m['title']}]({m['link']})")
+            lines.append(f"   🏷️ {m['tags']} | [Forward: `/send_{m['msg_id']}`]")
+
+        lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        lines.append("💡 **Actions:**")
+        lines.append(f"• Tap any title link to watch inline in 'learning'")
+        lines.append(f"• Send `/send <ID>` to forward the video directly to your chat")
+        lines.append(f"• Send `/search_send {query}` to automatically forward the #1 match!")
+
+        await event.respond("\n".join(lines), link_preview=False)
+
+    @client.on(events.NewMessage(pattern=r'^/search_send(?:\s+(.+))?$'))
+    async def handle_search_send(event):
+        query = (event.pattern_match.group(1) or "").strip()
+        if not query:
+            await event.respond("⚠️ Please specify what to search & forward. Example: `/search_send ict order block`")
+            return
+        matches = await search_learning_videos(client, query, limit=1)
+        if not matches:
+            await event.respond(f"❌ No matching videos found for *'{query}'*.")
+            return
+        m = matches[0]
+        learning_id = cfg.get("learning_id")
+        try:
+            learning_channel = await client.get_entity(learning_id)
+            await client.forward_messages(event.chat_id, m["msg_id"], learning_channel)
+        except Exception as e:
+            await event.respond(f"⚠️ Forward error: {e}")
+
+    @client.on(events.NewMessage(pattern=r'^/send(?:_(\d+)|\s+(\d+))$'))
+    async def handle_send(event):
+        mid_str = event.pattern_match.group(1) or event.pattern_match.group(2)
+        if not mid_str:
+            return
+        msg_id = int(mid_str)
+        learning_id = cfg.get("learning_id")
+        try:
+            learning_channel = await client.get_entity(learning_id)
+            await client.forward_messages(event.chat_id, msg_id, learning_channel)
+        except Exception as e:
+            await event.respond(f"⚠️ Could not forward video {msg_id}: {e}")
+
+    @client.on(events.NewMessage(pattern=r'^/(playlist|topics)(?:\s+([a-zA-Z_]+))?$'))
+    async def handle_playlist(event):
+        topic = (event.pattern_match.group(2) or "").strip().lower()
+        if not topic:
+            await event.respond(
+                "📂 **CURATED TRADING TOPIC CATALOGS:**\n\n"
+                "Explore curated playlists of streamable videos in 'learning':\n\n"
+                "• `/playlist ict` — Smart Money Concepts, Order Blocks, Liquidity Sweeps\n"
+                "• `/playlist price_action` — Naked Support/Resistance, Trendlines, Candlesticks\n"
+                "• `/playlist scalping` — Precision Scalping & Fast Intraday Timing\n"
+                "• `/playlist volume` — Volume Profile, Auction Market Theory, POC\n"
+                "• `/playlist algo` — Algorithmic, Quantitative & Python Backtesting\n\n"
+                "👉 Tap any command above to load that topic's playlist!"
+            )
+            return
+
+        title, matches = await get_curated_playlist(client, topic, limit=5)
+        if not matches:
+            await event.respond(f"⚠️ No videos found for playlist topic `{topic}`.")
+            return
+
+        lines = [f"{title} 🎬\n"]
+        for idx, m in enumerate(matches, 1):
+            lines.append(f"{idx}️⃣ [{m['title']}]({m['link']})")
+            lines.append(f"   👉 Forward to chat: `/send_{m['msg_id']}`")
+
+        lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"👉 Tap any video above to open in 'learning' or send `/send <ID>`!")
+        await event.respond("\n".join(lines), link_preview=False)
+
 
     @client.on(events.NewMessage(pattern=r'^/remind(?:_([a-zA-Z]+)|\s+([a-zA-Z]+))?$'))
     async def handle_remind(event):
