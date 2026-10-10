@@ -11,6 +11,12 @@ from aiohttp import web
 from trading_ai_tutor import ask_trading_tutor
 from video_search_engine import search_learning_videos, get_curated_playlist, PLAYLIST_TOPICS
 from automated_course_harvester import run_autonomous_turbo_harvester
+from goal_roadmap_engine import (
+    render_master_dashboard,
+    render_phase_post,
+    get_current_phase,
+    get_lesson_for_day
+)
 
 load_dotenv()
 API_ID = int(os.getenv('API_ID'))
@@ -474,7 +480,24 @@ def get_lesson_by_day(day_num):
         for d in w_data["days"]:
             if d["day"] == day_num:
                 return week_num, w_data["title"], d
-    return None, None, None
+    return get_lesson_for_day(day_num)
+
+async def sync_goal_dashboard_message(client, progress):
+    cfg = load_community_config()
+    goal_id = cfg.get("goal_id")
+    dash_msg_id = cfg.get("goal_dashboard_msg_id")
+    if not goal_id or not dash_msg_id:
+        return
+    try:
+        goal_entity = await client.get_entity(goal_id)
+        dash_text = render_master_dashboard(progress, cfg)
+        await client.edit_message(goal_entity, dash_msg_id, dash_text, link_preview=False)
+        print(f"[Goal Sync] Edited Master Dashboard in 'goal to achieve' (Msg {dash_msg_id})", flush=True)
+    except Exception as e:
+        if "MessageNotModified" in type(e).__name__:
+            pass
+        else:
+            print(f"[Goal Sync Error]: {e}", flush=True)
 
 def analyze_backlog(progress):
     start_date_str = progress.get("start_date")
@@ -485,7 +508,7 @@ def analyze_backlog(progress):
 
     today_d = date.today()
     days_elapsed = (today_d - start_d).days + 1
-    target_day = min(days_elapsed, 40)
+    target_day = min(days_elapsed, 120)
     current_day = progress.get("current_day", 1)
     completed_count = len(progress.get("completed_days", []))
 
@@ -506,7 +529,7 @@ async def post_today_lesson(client, progress):
         return None
 
     cur_day = progress.get("current_day", 1)
-    if cur_day > 40:
+    if cur_day > 120:
         return None
 
     # Check if already active in today
@@ -516,6 +539,10 @@ async def post_today_lesson(client, progress):
     week_num, week_title, lesson = get_lesson_by_day(cur_day)
     if not lesson:
         return None
+
+    phase = get_current_phase(cur_day)
+    goal_link = cfg.get("goal_link", "")
+    goal_str = f"• [🎯 6-Month Roadmap & Dashboard]({goal_link})\n" if goal_link else ""
 
     try:
         today_channel = await client.get_entity(today_id)
@@ -532,20 +559,22 @@ async def post_today_lesson(client, progress):
                 print(f"[!] Source media note: {me}", flush=True)
 
         caption = (
-            f"🎬 **[Video #1] TODAY'S ACTIVE LESSON — DAY {cur_day}/40** 🚀\n"
-            f"🏆 **{week_title}**\n\n"
+            f"🎬 **[Video #1] TODAY'S ACTIVE LESSON — DAY {cur_day}/120** 🚀\n"
+            f"🏆 **{phase['title']}**\n"
+            f"📌 **{week_title}**\n\n"
             f"📖 **Topic:** {lesson['topic']}\n"
             f"🎓 **Source Course:** `{lesson['course']}`\n\n"
             f"🔍 **Key Concepts to Master:**\n"
             f"• {lesson['concepts']}\n\n"
             f"📝 **Practical Chart Exercise:**\n"
             f"👉 {lesson['exercise']}\n\n"
+            f"{goal_str}"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"⚡ **QUICK SERIAL LOGGING:**\n"
             f"👉 Send: `/log 1` (or `/log 1 <notes>`)\n"
             f"• Or reply to this video with `[/watched]`\n"
             f"• Not watching today? Tap: `[/not_watched]` (moves to 'yesterday')\n\n"
-            f"👉 **Actions:** [/log 1] | [/watched] | [/not_watched] | [/stats] | [/menu]"
+            f"👉 **Actions:** [/log 1] | [/goal] | [/milestone] | [/ask] | [/stats] | [/menu]"
         )
 
         if source_media:
@@ -743,6 +772,7 @@ async def complete_active_lesson(client, minutes=30, user_notes=""):
 
     # Post next lesson immediately so user can binge-study!
     await post_today_lesson(client, progress)
+    await sync_goal_dashboard_message(client, progress)
 
     total_h = progress["total_study_minutes"] // 60
     total_m = progress["total_study_minutes"] % 60
@@ -793,6 +823,7 @@ async def complete_catchup_lesson(client, msg_id, minutes=30, user_notes=""):
         "notes": user_notes if user_notes else "Catch-up study completed"
     }
     save_progress(progress)
+    await sync_goal_dashboard_message(client, progress)
 
     cfg = load_community_config()
     yesterday_id = cfg.get("yesterday_id")
@@ -821,10 +852,10 @@ async def complete_catchup_lesson(client, msg_id, minutes=30, user_notes=""):
 
 def format_today_message(progress):
     day = progress.get("current_day", 1)
-    if day > 40:
+    if day > 120:
         return (
-            "🎉 **CONGRATULATIONS! YOU HAVE GRADUATED THE 8-WEEK TRADING MASTER CURRICULUM!** 🎉\n\n"
-            "You have mastered Price Action, Candlestick Psychology, SMC, Volume Profile, and Order Flow.\n"
+            "🎉 **CONGRATULATIONS! YOU HAVE GRADUATED THE 6-MONTH MASTER TRADING ROADMAP!** 🏆\n\n"
+            "You have completed all 120 Sessions across Price Action, SMC, Session Execution, Volume Profile, Playbook Edge, and Prop Firm Funding!\n"
             "Use `/reset` if you would like to restart the study cycle."
         )
 
@@ -832,6 +863,7 @@ def format_today_message(progress):
     if not lesson:
         return "No lesson found for today."
 
+    phase = get_current_phase(day)
     streak = progress.get("streak", 0)
     streak_badge = f"🔥 Streak: **{streak} days**" if streak > 0 else "🌱 Start your streak today!"
     buf = progress.get("buffer_days", 0)
@@ -840,6 +872,8 @@ def format_today_message(progress):
     cfg = load_community_config()
     today_link = cfg.get("today_link", "")
     yesterday_link = cfg.get("yesterday_link", "")
+    goal_link = cfg.get("goal_link", "")
+    goal_str = f"\n🎯 **Roadmap Target:** [{phase['title']}]({goal_link})\n" if goal_link else f"\n🎯 **Roadmap Target:** {phase['title']}\n"
 
     today_str = date.today().isoformat()
     journal = progress.get("daily_journal", {})
@@ -854,19 +888,21 @@ def format_today_message(progress):
         backlog_str = f"\n⏳ **Catch-Up Backlog:** [{len(b_items)} Missed Lesson(s) in 'yesterday']({yesterday_link})\n"
 
     msg = (
-        f"📅 **TODAY'S SCHEDULE — DAY {day}/40** ({streak_badge}{buf_badge})\n"
-        f"🏆 **{week_title}**\n\n"
+        f"📅 **TODAY'S SCHEDULE — DAY {day}/120** ({streak_badge}{buf_badge})\n"
+        f"🏆 **{phase['title']}**\n"
+        f"📌 **{week_title}**\n\n"
         f"📖 **Topic:** {lesson['topic']}\n"
         f"🎓 **Source Course:** `{lesson['course']}`\n\n"
         f"🔍 **Key Concepts to Master:**\n"
         f"• {lesson['concepts']}\n\n"
         f"📝 **Practical Chart Exercise:**\n"
-        f"👉 {lesson['exercise']}\n\n"
-        f"🎬 **Watch Video in 'today':** [Tap Here to Watch Lesson]({today_link})\n"
+        f"👉 {lesson['exercise']}\n"
+        f"{goal_str}"
         f"{today_log_str}"
-        f"{backlog_str}"
+        f"{backlog_str}\n"
+        f"🎬 **Watch Video in 'today':** [Tap Here to Watch Lesson]({today_link})\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👉 **Actions:** [/watched] | [/not_watched] | [/suggest_30] | [/menu]"
+        f"👉 **Actions:** [/log 1] | [/goal] | [/milestone] | [/ask] | [/not_watched] | [/menu]"
     )
     return msg
 
@@ -946,11 +982,12 @@ def format_suggest(minutes, progress):
 
 def format_stats(progress):
     completed = len(progress.get("completed_days", []))
-    total = 40
+    total = 120
     pct = int((completed / total) * 100)
     bars = int(pct / 10)
     bar_str = "█" * bars + "░" * (10 - bars)
     cur_day = progress.get("current_day", 1)
+    phase = get_current_phase(cur_day)
     streak = progress.get("streak", 0)
     best_streak = progress.get("best_streak", 0)
     buf = progress.get("buffer_days", 0)
@@ -958,16 +995,21 @@ def format_stats(progress):
     hours = total_mins // 60
     mins = total_mins % 60
 
+    cfg = load_community_config()
+    goal_link = cfg.get("goal_link", "")
+    goal_str = f"• [🎯 6-Month Roadmap Dashboard]({goal_link})\n" if goal_link else ""
+
     b = analyze_backlog(progress)
     backlog_str = "🟢 On Track" if b["backlog"] <= 0 else f"🟡 {b['backlog']} Days Behind"
-    remaining_days = max(40 - completed, 0)
+    remaining_days = max(120 - completed, 0)
     est_date = date.today() + timedelta(days=remaining_days)
 
     msg = (
-        f"📊 **YOUR COMPLETE TRADING STUDY DASHBOARD**\n\n"
+        f"📊 **YOUR 6-MONTH MASTER STUDY DASHBOARD**\n\n"
         f"🏆 **Overall Progress:** `[{bar_str}]` **{pct}%**\n"
         f"• **Lessons Completed:** {completed}/{total}\n"
-        f"• **Current Active Day:** Day {cur_day}\n\n"
+        f"• **Active Phase:** {phase['title']}\n"
+        f"• **Current Active Day:** Day {cur_day} of 120\n\n"
         f"🔥 **Streaks & Habits:**\n"
         f"• **Current Streak:** {streak} days in a row\n"
         f"• **All-Time Best Streak:** {best_streak} days\n"
@@ -976,9 +1018,10 @@ def format_stats(progress):
         f"• **{hours} hrs {mins} mins** logged\n\n"
         f"📅 **Pacing & Schedule:**\n"
         f"• **Backlog Status:** {backlog_str}\n"
-        f"• **Target Graduation Date:** {est_date.strftime('%B %d, %Y')}\n\n"
+        f"• **Target Funded Trader Date:** {est_date.strftime('%B %d, %Y')}\n"
+        f"{goal_str}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👉 **Console:** [/today] | [/suggest_30] | [/backlog] | [/quiz] | [/menu]"
+        f"👉 **Console:** [/goal] | [/milestone] | [/today] | [/suggest_30] | [/menu]"
     )
     return msg
 
@@ -993,14 +1036,21 @@ def format_menu(progress):
     learning_link = cfg.get("learning_link", "")
     today_link = cfg.get("today_link", "")
     yesterday_link = cfg.get("yesterday_link", "")
+    goal_link = cfg.get("goal_link", "")
+    goal_line = f"│ • [🎯 'goal to achieve' 6-Month Roadmap]({goal_link})\n" if goal_link else ""
 
     return (
-        f"🎛️ **TRADING MENTOR TOUCH CONSOLE** ({streak_icon} Day {day}/40 | Streak: {streak}d{buf_str})\n\n"
+        f"🎛️ **TRADING MENTOR TOUCH CONSOLE** ({streak_icon} Day {day}/120 | Streak: {streak}d{buf_str})\n\n"
         f"Tap any command below for instant action:\n\n"
-        f"┌── 🌐 **3-CHANNEL LEARNING SYSTEM** ──┐\n"
+        f"┌── 🌐 **4-CHANNEL INSTITUTIONAL ECOSYSTEM** ──┐\n"
+        f"{goal_line}"
         f"│ • [📅 'today' Active Daily Focus]({today_link})\n"
         f"│ • [⏳ 'yesterday' Catch-Up Backlog]({yesterday_link})\n"
         f"│ • [📚 'learning' Master Library]({learning_link})\n"
+        f"└───────────────────────────────┘\n\n"
+        f"┌── 🎯 **6-MONTH ROADMAP & GOALS** ────┐\n"
+        f"│ • [/goal] — Live 6-Month Roadmap & Progress Bar\n"
+        f"│ • [/milestone] — Active Month Syllabus Checklist\n"
         f"└───────────────────────────────┘\n\n"
         f"┌── 📅 **DAILY STUDY & ACTIONS** ───────┐\n"
         f"│ • [/log] — Active Videos & Serial Numbers\n"
@@ -1177,6 +1227,22 @@ async def main():
         progress = load_progress()
         await event.respond(format_menu(progress), link_preview=False)
 
+    @client.on(events.NewMessage(pattern=r'^/goal$'))
+    async def handle_goal(event):
+        progress = load_progress()
+        cfg = load_community_config()
+        msg = render_master_dashboard(progress, cfg)
+        await event.respond(msg, link_preview=False)
+
+    @client.on(events.NewMessage(pattern=r'^/milestone$'))
+    async def handle_milestone(event):
+        progress = load_progress()
+        cfg = load_community_config()
+        cur_day = progress.get("current_day", 1)
+        phase = get_current_phase(cur_day)
+        msg = render_phase_post(phase["month"], cfg)
+        await event.respond(msg, link_preview=False)
+
     @client.on(events.NewMessage(pattern=r'^/(today|schedule)$'))
     async def handle_today(event):
         progress = load_progress()
@@ -1269,10 +1335,7 @@ async def main():
 
             # --- SERIAL #1: Active Curriculum Lesson ---
             if serial_num == 1:
-                cur_day = progress.get("current_day", 1)
-                week_n, week_t, lesson = get_lesson_by_day(cur_day)
-                topic = lesson["topic"] if lesson else f"Day {cur_day} Lesson"
-                resp = await complete_today_lesson(client, minutes=mins, user_notes=notes, topic=topic)
+                resp = await complete_active_lesson(client, minutes=mins, user_notes=notes)
                 await event.respond(f"✅ **[VIDEO #1 LOGGED]**\n\n" + resp, link_preview=False)
                 return
 
@@ -1308,6 +1371,7 @@ async def main():
                 "notes": notes if notes else f"Watched and studied Video #{serial_num}"
             }
             save_progress(progress)
+            await sync_goal_dashboard_message(client, progress)
 
             total_h = progress["total_study_minutes"] // 60
             total_m = progress["total_study_minutes"] % 60
