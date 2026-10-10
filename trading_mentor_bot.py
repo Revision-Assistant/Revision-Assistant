@@ -529,7 +529,7 @@ async def post_today_lesson(client, progress):
                 print(f"[!] Source media note: {me}", flush=True)
 
         caption = (
-            f"🎬 **TODAY'S ACTIVE LESSON — DAY {cur_day}/40** 🚀\n"
+            f"🎬 **[Video #1] TODAY'S ACTIVE LESSON — DAY {cur_day}/40** 🚀\n"
             f"🏆 **{week_title}**\n\n"
             f"📖 **Topic:** {lesson['topic']}\n"
             f"🎓 **Source Course:** `{lesson['course']}`\n\n"
@@ -538,11 +538,11 @@ async def post_today_lesson(client, progress):
             f"📝 **Practical Chart Exercise:**\n"
             f"👉 {lesson['exercise']}\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📝 **HOW TO COMPLETE & LOG TODAY:**\n"
-            f"• Reply to this video with your takeaways & notes\n"
-            f"• OR reply with `[/watched]` (or `[/watched 45]`)\n"
+            f"⚡ **QUICK SERIAL LOGGING:**\n"
+            f"👉 Send: `/log 1` (or `/log 1 <notes>`)\n"
+            f"• Or reply to this video with `[/watched]`\n"
             f"• Not watching today? Tap: `[/not_watched]` (moves to 'yesterday')\n\n"
-            f"👉 **Actions:** [/watched] | [/not_watched] | [/stats] | [/menu]"
+            f"👉 **Actions:** [/log 1] | [/watched] | [/not_watched] | [/stats] | [/menu]"
         )
 
         if source_media:
@@ -562,6 +562,12 @@ async def post_today_lesson(client, progress):
 
         progress["today_posted_day"] = cur_day
         progress["today_msg_id"] = msg.id
+        progress.setdefault("today_serials", {})["1"] = {
+            "msg_id": msg.id,
+            "title": f"Day {cur_day}: {lesson['topic']}",
+            "type": "curriculum",
+            "day": cur_day
+        }
         save_progress(progress)
         print(f"[+] Posted and pinned Day {cur_day} video in 'today' channel (Msg ID: {msg.id})", flush=True)
         return msg.id
@@ -994,8 +1000,10 @@ def format_menu(progress):
         f"│ • [📚 'learning' Master Library]({learning_link})\n"
         f"└───────────────────────────────┘\n\n"
         f"┌── 📅 **DAILY STUDY & ACTIONS** ───────┐\n"
-        f"│ • [/today] — Today's Schedule & Notes\n"
-        f"│ • [/watched] — Log Video Watched (+Streak)\n"
+        f"│ • [/log] — Active Videos & Serial Numbers\n"
+        f"│ • [/log 1] — Quick Log Video #1 (Curriculum)\n"
+        f"│ • [/log 2] — Quick Log Video #2 (+1 Buffer Day)\n"
+        f"│ • [/today] — Today's Schedule & Active Lesson\n"
         f"│ • [/not_watched] — Move Unwatched to 'yesterday'\n"
         f"│ • [/leach_5] — Bot Leach 5 Fresh Videos\n"
         f"│ • [/suggest_30] — 30-Min Structured Routine\n"
@@ -1003,8 +1011,7 @@ def format_menu(progress):
         f"┌── 📊 **PROGRESS & HABITS** ──────────┐\n"
         f"│ • [/stats] — Progress Dashboard & Bar\n"
         f"│ • [/backlog] — Pacing Audit & Catch-Up Plan\n"
-        f"│ • [/log_45] — Log 45 Study Minutes\n"
-        f"│ • [/harvester_status] — 3-Day Scraper Status\n"
+        f"│ • [/harvester_status] — Streamable Scraper Status\n"
         f"└───────────────────────────────┘\n\n"
         f"┌── 🧠 **MASTERY & TOOLS** ────────────┐\n"
         f"│ • [/quiz] — Multiple-Choice Trading Quiz\n"
@@ -1196,22 +1203,133 @@ async def main():
         progress = load_progress()
         await event.respond(format_stats(progress), link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/log(?:_(\d+)|\s+(\d+))?$'))
+    @client.on(events.NewMessage(pattern=r'^/log(?:_([a-zA-Z0-9]+))?(?:\s+(.*))?$'))
     async def handle_log(event):
-        mins_str = event.pattern_match.group(1) or event.pattern_match.group(2)
-        if not mins_str:
-            await event.respond("⚠️ Please specify minutes studied. Example: `/log 45` or [/log_45]")
-            return
-        mins = int(mins_str)
+        sub_arg = (event.pattern_match.group(1) or "").strip()
+        main_arg = (event.pattern_match.group(2) or "").strip()
+        raw_input = f"{sub_arg} {main_arg}".strip()
+
         progress = load_progress()
-        progress["total_study_minutes"] = progress.get("total_study_minutes", 0) + mins
-        save_progress(progress)
-        total_h = progress["total_study_minutes"] // 60
-        total_m = progress["total_study_minutes"] % 60
+        today_serials = progress.get("today_serials", {})
+
+        # If user just sent /log without args: list all active videos with serial numbers
+        if not raw_input:
+            cur_day = progress.get("current_day", 1)
+            week_n, week_t, lesson = get_lesson_by_day(cur_day)
+            cur_topic = lesson["topic"] if lesson else f"Day {cur_day} Lesson"
+
+            lines = ["📋 **ACTIVE VIDEOS IN TODAY'S CLASSROOM ('today'):**\n"]
+            lines.append(f"1️⃣ **[#1] Day {cur_day}: {cur_topic}** *(Active Curriculum Lesson)*")
+
+            for s_str in sorted(today_serials.keys(), key=lambda x: int(x)):
+                if s_str == "1":
+                    continue
+                s_info = today_serials[s_str]
+                is_done = int(s_str) in progress.get("completed_serials", [])
+                status_icon = "✅ (Completed)" if is_done else f"{s_str}️⃣"
+                lines.append(f"{status_icon} **[#{s_str}] {s_info.get('title', 'Trading Video')}**")
+
+            lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append("⚡ **EASY LOGGING BY SERIAL NUMBER:**")
+            lines.append("• `/log 1` — Log Video #1 (Curriculum Lesson)")
+            lines.append("• `/log 2` — Log Video #2 (Extra Video: +1 Buffer Day banked!)")
+            lines.append("• `/log 1 45 Understood liquidity sweep` — Log with custom time & notes!")
+            lines.append(f"\n👉 Tap: [📅 Open 'today']({cfg.get('today_link', '')}) | [/stats] | [/menu]")
+
+            await event.respond("\n".join(lines), link_preview=False)
+            return
+
+        tokens = raw_input.split()
+        first_token = tokens[0]
+
+        # Case 1: First token is a serial number (1..20)
+        if first_token.isdigit() and int(first_token) <= 20:
+            serial_num = int(first_token)
+            rest = tokens[1:]
+
+            mins = 45
+            notes = ""
+            if rest and rest[0].isdigit():
+                mins = int(rest[0])
+                notes = " ".join(rest[1:])
+            elif rest:
+                notes = " ".join(rest)
+
+            # --- SERIAL #1: Active Curriculum Lesson ---
+            if serial_num == 1:
+                cur_day = progress.get("current_day", 1)
+                week_n, week_t, lesson = get_lesson_by_day(cur_day)
+                topic = lesson["topic"] if lesson else f"Day {cur_day} Lesson"
+                resp = await complete_today_lesson(client, minutes=mins, user_notes=notes, topic=topic)
+                await event.respond(f"✅ **[VIDEO #1 LOGGED]**\n\n" + resp, link_preview=False)
+                return
+
+            # --- SERIAL #2..N: Extra Video in Today ---
+            s_key = str(serial_num)
+            s_info = today_serials.get(s_key, {"title": f"Video #{serial_num}"})
+            v_title = s_info.get("title", f"Video #{serial_num}")
+
+            if serial_num in progress.get("completed_serials", []):
+                await event.respond(
+                    f"ℹ️ **[Video #{serial_num}]** *{v_title}* was already logged today!\n"
+                    f"Send `/log` to view other active videos ready to log.",
+                    link_preview=False
+                )
+                return
+
+            progress.setdefault("completed_serials", []).append(serial_num)
+            progress["total_study_minutes"] = progress.get("total_study_minutes", 0) + mins
+            progress["buffer_days"] = progress.get("buffer_days", 0) + 1
+            cur_buf = progress["buffer_days"]
+
+            today_str = date.today().isoformat()
+            if progress.get("last_completed_date") != today_str:
+                progress["streak"] = progress.get("streak", 0) + 1
+                progress["best_streak"] = max(progress.get("best_streak", 0), progress["streak"])
+                progress["last_completed_date"] = today_str
+
+            progress.setdefault("daily_journal", {})[f"video_{serial_num}_{today_str}"] = {
+                "serial": serial_num,
+                "title": v_title,
+                "date": today_str,
+                "minutes": mins,
+                "notes": notes if notes else f"Watched and studied Video #{serial_num}"
+            }
+            save_progress(progress)
+
+            total_h = progress["total_study_minutes"] // 60
+            total_m = progress["total_study_minutes"] % 60
+
+            resp = (
+                f"🎉 **[VIDEO #{serial_num}] LOGGED AS WATCHED!** 🏆\n\n"
+                f"🎬 **Video:** {v_title}\n"
+                f"⏱️ **Time Invested:** +{mins} mins (Total: {total_h}h {total_m}m)\n"
+                f"🛡️ **BUFFER ACCELERATOR:** 🛡️ **+1 Buffer Day Banked!**\n"
+                f"You are now **{cur_buf} day(s) ahead of schedule!**\n"
+                f"🔥 **Habit Streak:** {progress['streak']} days active!\n"
+                f"📝 **Journal Entry:** *{notes if notes else 'Completed study session'}*\n\n"
+                f"✨ *Great job accelerating your learning! Send `/log` to see remaining active videos.*"
+            )
+            await event.respond(resp, link_preview=False)
+            return
+
+        # Case 2: User specified study minutes (e.g. /log 30 or /log 60)
+        if first_token.isdigit() and int(first_token) > 20:
+            mins = int(first_token)
+            progress["total_study_minutes"] = progress.get("total_study_minutes", 0) + mins
+            save_progress(progress)
+            total_h = progress["total_study_minutes"] // 60
+            total_m = progress["total_study_minutes"] % 60
+            await event.respond(
+                f"⏱️ **LOGGED {mins} MINUTES OF STUDY TIME!** 👏\n\n"
+                f"• **Total Time Invested:** {total_h} hrs {total_m} mins\n\n"
+                f"💡 *Tip: To log a specific video, use `/log 1`, `/log 2`, etc. Send `/log` to view list.*",
+                link_preview=False
+            )
+            return
+
         await event.respond(
-            f"⏱️ **LOGGED {mins} MINUTES OF STUDY TIME!** 👏\n\n"
-            f"• **Total Time Invested:** {total_h} hrs {total_m} mins\n\n"
-            f"👉 **Actions:** [/stats] | [/today] | [/menu]"
+            f"⚠️ Unknown serial number `{first_token}`. Send `/log` to see active video numbers (e.g. `/log 1`, `/log 2`)."
         )
 
     @client.on(events.NewMessage(pattern=r'^/harvester_status$'))
@@ -1375,7 +1493,18 @@ async def main():
         await event.respond("🔄 Your study schedule has been reset back to **Day 1**! Send `/today` to begin.")
 
     print("[+] Enhanced Trading Mentor Bot is listening for commands...", flush=True)
-    await client.run_until_disconnected()
+    while True:
+        try:
+            await client.run_until_disconnected()
+            break
+        except Exception as e:
+            print(f"[!] Update warning: {e}. Auto-reconnecting in 3s...", flush=True)
+            await asyncio.sleep(3)
+            try:
+                if not client.is_connected():
+                    await client.connect()
+            except Exception as ce:
+                print(f"[!] Reconnect error: {ce}", flush=True)
 
 if __name__ == '__main__':
     asyncio.run(main())
