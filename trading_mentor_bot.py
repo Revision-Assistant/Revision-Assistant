@@ -997,6 +997,7 @@ def format_menu(progress):
         f"│ • [/today] — Today's Schedule & Notes\n"
         f"│ • [/watched] — Log Video Watched (+Streak)\n"
         f"│ • [/not_watched] — Move Unwatched to 'yesterday'\n"
+        f"│ • [/leach_5] — Bot Leach 5 Fresh Videos\n"
         f"│ • [/suggest_30] — 30-Min Structured Routine\n"
         f"└───────────────────────────────┘\n\n"
         f"┌── 📊 **PROGRESS & HABITS** ──────────┐\n"
@@ -1284,6 +1285,16 @@ async def main():
             progress["notifications_enabled"] = False
             save_progress(progress)
             await event.respond("🔕 **Notifications Disabled.** You can re-enable anytime with `/remind on`.")
+
+    @client.on(events.NewMessage(pattern=r'^/leach(?:_(\d+)|\s+(\d+))?$'))
+    async def handle_leach(event):
+        c_str = event.pattern_match.group(1) or event.pattern_match.group(2)
+        count = int(c_str) if c_str else 5
+        await event.respond(f"⏳ **BOT LEACH ACTIVE:** Searching monitored channels to extract and upload {count} videos into 'today'...", link_preview=False)
+        from bot_leach_uploader import leach_5_videos
+        cfg = load_community_config()
+        up = await leach_5_videos(client, cfg.get("today_id"))
+        await event.respond(f"✅ **BOT LEACH COMPLETE:** Successfully extracted and uploaded {up} streamable trading videos into [today]({cfg.get('today_link', '')})!", link_preview=False)
 
     @client.on(events.NewMessage(pattern=r'^/roadmap$'))
     async def handle_roadmap(event):
