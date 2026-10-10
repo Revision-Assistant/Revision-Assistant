@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+from aiohttp import web
 
 load_dotenv()
 API_ID = int(os.getenv('API_ID'))
@@ -938,6 +939,20 @@ async def main():
             "quiz_idx": 0
         })
         await event.respond("🔄 Your study schedule has been reset back to **Day 1**! Send `/today` to begin.")
+
+    # Start web health-check server (Render Free Web Service compatible)
+    async def handle_health(request):
+        return web.Response(text="Trading Mentor Bot Online 24/7!")
+
+    port = int(os.getenv("PORT", "10000"))
+    app = web.Application()
+    app.router.add_get('/', handle_health)
+    app.router.add_get('/health', handle_health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"[+] Health-check HTTP server running on port {port} (Render compatible).", flush=True)
 
     print("[+] Enhanced Trading Mentor Bot is listening for commands...", flush=True)
     await client.run_until_disconnected()
