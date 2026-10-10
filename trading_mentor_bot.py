@@ -387,6 +387,45 @@ QUIZ_QUESTIONS = [
     }
 ]
 
+def load_community_config():
+    cfg_file = Path("community_channels.json")
+    cfg = {
+        "learning_id": -1004300323085,
+        "learning_link": "https://t.me/+TfOQpTVcZ6I2OTRl",
+        "today_id": -1004450794887,
+        "today_link": "https://t.me/+yOo23RcdbMJhYTU1",
+        "yesterday_id": -1004425765502,
+        "yesterday_link": "https://t.me/+YmLMLYqH9GM0MjU1"
+    }
+    if cfg_file.exists():
+        try:
+            with open(cfg_file, "r") as f:
+                loaded = json.load(f)
+                for k in ["learning_id", "today_id", "yesterday_id"]:
+                    val = loaded.get(k)
+                    if val:
+                        if not str(val).startswith("-100"):
+                            loaded[k] = int(f"-100{val}")
+                        else:
+                            loaded[k] = int(val)
+                cfg.update(loaded)
+        except Exception:
+            pass
+    return cfg
+
+def get_catalog_video(day_num):
+    cat_file = Path("learning_video_catalog.json")
+    if cat_file.exists():
+        try:
+            with open(cat_file, "r") as f:
+                vids = json.load(f)
+                if vids:
+                    idx = (day_num - 1) % len(vids)
+                    return vids[idx]
+        except Exception:
+            pass
+    return None
+
 def load_progress():
     today_str = date.today().isoformat()
     defaults = {
@@ -397,6 +436,11 @@ def load_progress():
         "streak": 0,
         "best_streak": 0,
         "total_study_minutes": 0,
+        "buffer_days": 0,
+        "daily_journal": {},
+        "backlog_items": [],
+        "today_posted_day": None,
+        "today_msg_id": None,
         "notifications_enabled": True,
         "morning_hour": 8,
         "morning_min": 30,
@@ -438,7 +482,6 @@ def analyze_backlog(progress):
 
     today_d = date.today()
     days_elapsed = (today_d - start_d).days + 1
-    # Cap target day at 40
     target_day = min(days_elapsed, 40)
     current_day = progress.get("current_day", 1)
     completed_count = len(progress.get("completed_days", []))
@@ -451,6 +494,321 @@ def analyze_backlog(progress):
         "backlog": backlog,
         "days_elapsed": days_elapsed
     }
+
+async def post_today_lesson(client, progress):
+    cfg = load_community_config()
+    today_id = cfg.get("today_id")
+    learning_id = cfg.get("learning_id")
+    if not today_id:
+        return None
+
+    cur_day = progress.get("current_day", 1)
+    if cur_day > 40:
+        return None
+
+    # Check if already active in today
+    if progress.get("today_posted_day") == cur_day and progress.get("today_msg_id"):
+        return progress["today_msg_id"]
+
+    week_num, week_title, lesson = get_lesson_by_day(cur_day)
+    if not lesson:
+        return None
+
+    try:
+        today_channel = await client.get_entity(today_id)
+        learning_channel = await client.get_entity(learning_id) if learning_id else None
+
+        v_info = get_catalog_video(cur_day)
+        source_media = None
+        if learning_channel and v_info:
+            try:
+                src_msg = await client.get_messages(learning_channel, ids=v_info["id"])
+                if src_msg and src_msg.media:
+                    source_media = src_msg.media
+            except Exception as me:
+                print(f"[!] Source media note: {me}", flush=True)
+
+        caption = (
+            f"🎬 **TODAY'S ACTIVE LESSON — DAY {cur_day}/40** 🚀\n"
+            f"🏆 **{week_title}**\n\n"
+            f"📖 **Topic:** {lesson['topic']}\n"
+            f"🎓 **Source Course:** `{lesson['course']}`\n\n"
+            f"🔍 **Key Concepts to Master:**\n"
+            f"• {lesson['concepts']}\n\n"
+            f"📝 **Practical Chart Exercise:**\n"
+            f"👉 {lesson['exercise']}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📝 **HOW TO COMPLETE & LOG TODAY:**\n"
+            f"• Reply to this video with your takeaways & notes\n"
+            f"• OR reply with `[/watched]` (or `[/watched 45]`)\n"
+            f"• Not watching today? Tap: `[/not_watched]` (moves to 'yesterday')\n\n"
+            f"👉 **Actions:** [/watched] | [/not_watched] | [/stats] | [/menu]"
+        )
+
+        if source_media:
+            msg = await client.send_file(
+                today_channel,
+                source_media,
+                caption=caption,
+                supports_streaming=True
+            )
+        else:
+            msg = await client.send_message(today_channel, caption)
+
+        try:
+            await client.pin_message(today_channel, msg.id, notify=False)
+        except Exception:
+            pass
+
+        progress["today_posted_day"] = cur_day
+        progress["today_msg_id"] = msg.id
+        save_progress(progress)
+        print(f"[+] Posted and pinned Day {cur_day} video in 'today' channel (Msg ID: {msg.id})", flush=True)
+        return msg.id
+
+    except Exception as e:
+        print(f"[!] Error posting today's lesson: {e}", flush=True)
+        return None
+
+async def move_today_to_yesterday(client, progress, reason="manual"):
+    cfg = load_community_config()
+    today_id = cfg.get("today_id")
+    yesterday_id = cfg.get("yesterday_id")
+    today_link = cfg.get("today_link", "")
+
+    if not today_id or not yesterday_id:
+        return False
+
+    posted_day = progress.get("today_posted_day", progress.get("current_day", 1))
+    today_msg_id = progress.get("today_msg_id")
+
+    week_num, week_title, lesson = get_lesson_by_day(posted_day)
+    if not lesson:
+        return False
+
+    try:
+        today_channel = await client.get_entity(today_id)
+        yesterday_channel = await client.get_entity(yesterday_id)
+
+        source_media = None
+        if today_msg_id:
+            try:
+                t_msg = await client.get_messages(today_channel, ids=today_msg_id)
+                if t_msg and t_msg.media:
+                    source_media = t_msg.media
+            except Exception:
+                pass
+
+        if not source_media:
+            v_info = get_catalog_video(posted_day)
+            learning_channel = await client.get_entity(cfg.get("learning_id"))
+            if learning_channel and v_info:
+                try:
+                    src_msg = await client.get_messages(learning_channel, ids=v_info["id"])
+                    if src_msg and src_msg.media:
+                        source_media = src_msg.media
+                except Exception:
+                    pass
+
+        y_caption = (
+            f"⏳ **MISSED LESSON — DAY {posted_day}/40** (Catch-Up Backlog)\n"
+            f"🏆 **{week_title}**\n\n"
+            f"📖 **Topic:** {lesson['topic']}\n"
+            f"🎓 **Source Course:** `{lesson['course']}`\n\n"
+            f"🔍 **Key Concepts:**\n"
+            f"• {lesson['concepts']}\n\n"
+            f"📝 **Practical Chart Exercise:**\n"
+            f"👉 {lesson['exercise']}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔄 **CATCH-UP INSTRUCTIONS:**\n"
+            f"Reply to this video with your notes or `[/watched]` to clear this backlog item & protect your streak!\n\n"
+            f"👉 Tap: [/watched] | [📅 Return to Active 'today']({today_link})"
+        )
+
+        if source_media:
+            y_msg = await client.send_file(
+                yesterday_channel,
+                source_media,
+                caption=y_caption,
+                supports_streaming=True
+            )
+        else:
+            y_msg = await client.send_message(yesterday_channel, y_caption)
+
+        # Delete from 'today' so it is completely clean
+        if today_msg_id:
+            try:
+                await client.delete_messages(today_channel, [today_msg_id])
+            except Exception:
+                pass
+
+        today_str = date.today().isoformat()
+        progress.setdefault("backlog_items", []).append({
+            "day": posted_day,
+            "topic": lesson["topic"],
+            "yesterday_msg_id": y_msg.id,
+            "moved_date": today_str
+        })
+
+        progress["current_day"] = posted_day + 1
+        progress["today_posted_day"] = None
+        progress["today_msg_id"] = None
+        save_progress(progress)
+
+        print(f"[+] Moved Day {posted_day} to 'yesterday' catch-up channel (Msg ID: {y_msg.id})", flush=True)
+
+        # Post next lesson into 'today'
+        await post_today_lesson(client, progress)
+        return True
+
+    except Exception as e:
+        print(f"[!] Error moving to yesterday: {e}", flush=True)
+        return False
+
+async def complete_active_lesson(client, minutes=30, user_notes=""):
+    progress = load_progress()
+    cur_day = progress.get("current_day", 1)
+    week_num, week_title, lesson = get_lesson_by_day(cur_day)
+    topic_str = lesson["topic"] if lesson else f"Lesson {cur_day}"
+
+    today_str = date.today().isoformat()
+    last_date = progress.get("last_completed_date")
+
+    already_done_today = any(
+        j.get("date") == today_str for j in progress.get("daily_journal", {}).values()
+    )
+    is_buffer_hit = already_done_today
+
+    if is_buffer_hit:
+        progress["buffer_days"] = progress.get("buffer_days", 0) + 1
+    else:
+        if last_date:
+            try:
+                last_d = date.fromisoformat(last_date)
+                delta = (date.today() - last_d).days
+                if delta == 1:
+                    progress["streak"] = progress.get("streak", 0) + 1
+                elif delta > 1:
+                    gap = delta - 1
+                    cur_buf = progress.get("buffer_days", 0)
+                    if cur_buf >= gap:
+                        progress["buffer_days"] -= gap
+                        progress["streak"] = progress.get("streak", 0) + 1
+                    else:
+                        progress["buffer_days"] = 0
+                        progress["streak"] = 1
+            except Exception:
+                progress["streak"] = 1
+        else:
+            progress["streak"] = 1
+
+    progress["best_streak"] = max(progress.get("best_streak", 0), progress["streak"])
+    progress["last_completed_date"] = today_str
+    progress["total_study_minutes"] = progress.get("total_study_minutes", 0) + minutes
+
+    if cur_day not in progress.get("completed_days", []):
+        progress.setdefault("completed_days", []).append(cur_day)
+
+    journal_entry = {
+        "day": cur_day,
+        "topic": topic_str,
+        "date": today_str,
+        "minutes": minutes,
+        "notes": user_notes if user_notes else "Completed lesson & chart study"
+    }
+    progress.setdefault("daily_journal", {})[f"day_{cur_day}"] = journal_entry
+
+    cfg = load_community_config()
+    today_id = cfg.get("today_id")
+    if today_id and progress.get("today_msg_id"):
+        try:
+            today_channel = await client.get_entity(today_id)
+            await client.unpin_message(today_channel, progress["today_msg_id"])
+        except Exception:
+            pass
+
+    progress["current_day"] = cur_day + 1
+    progress["today_posted_day"] = None
+    progress["today_msg_id"] = None
+    save_progress(progress)
+
+    # Post next lesson immediately so user can binge-study!
+    await post_today_lesson(client, progress)
+
+    total_h = progress["total_study_minutes"] // 60
+    total_m = progress["total_study_minutes"] % 60
+    streak_val = progress["streak"]
+    buf_val = progress.get("buffer_days", 0)
+
+    buf_banner = f"\n\n🛡️ **BUFFER ACCELERATOR ACTIVATED!** +1 Buffer Day banked!\nYou are now **{buf_val} day(s) ahead of schedule!**" if is_buffer_hit else ""
+
+    response_text = (
+        f"🎉 **DAY {cur_day} MARKED AS COMPLETED!** 👏\n"
+        f"📖 **Topic:** {topic_str}\n"
+        f"📝 **Journal Notes:** *{journal_entry['notes']}*\n\n"
+        f"• **Session Time Logged:** +{minutes} mins\n"
+        f"• **Total Time Invested:** {total_h} hrs {total_m} mins\n"
+        f"🔥 **Current Streak:** {streak_val} days in a row!"
+        f"{buf_banner}\n\n"
+        f"🏆 **Next Lesson Unlocked:** Day {cur_day + 1} is now ready in [today]({cfg.get('today_link', '')})!\n\n"
+        f"👉 **Actions:** [/today] | [/stats] | [/menu]"
+    )
+    return response_text
+
+async def complete_catchup_lesson(client, msg_id, minutes=30, user_notes=""):
+    progress = load_progress()
+    backlog_items = progress.get("backlog_items", [])
+    matched_item = None
+    for item in backlog_items:
+        if item.get("yesterday_msg_id") == msg_id:
+            matched_item = item
+            break
+
+    day_num = matched_item["day"] if matched_item else None
+    topic_str = matched_item["topic"] if matched_item else "Catch-Up Lesson"
+
+    today_str = date.today().isoformat()
+    progress["total_study_minutes"] = progress.get("total_study_minutes", 0) + minutes
+
+    if day_num and day_num not in progress.get("completed_days", []):
+        progress.setdefault("completed_days", []).append(day_num)
+
+    if matched_item:
+        progress["backlog_items"].remove(matched_item)
+
+    progress.setdefault("daily_journal", {})[f"day_{day_num if day_num else 'catchup'}"] = {
+        "day": day_num,
+        "topic": topic_str,
+        "date": today_str,
+        "minutes": minutes,
+        "notes": user_notes if user_notes else "Catch-up study completed"
+    }
+    save_progress(progress)
+
+    cfg = load_community_config()
+    yesterday_id = cfg.get("yesterday_id")
+    if yesterday_id and msg_id:
+        try:
+            y_channel = await client.get_entity(yesterday_id)
+            y_msg = await client.get_messages(y_channel, ids=msg_id)
+            if y_msg and y_msg.message:
+                new_text = y_msg.message + f"\n\n✅ **COMPLETED CATCH-UP** (Logged {today_str})"
+                await client.edit_message(y_channel, msg_id, new_text)
+        except Exception:
+            pass
+
+    rem_backlog = len(progress.get("backlog_items", []))
+    status_str = f"Remaining Backlog in 'yesterday': **{rem_backlog} lesson(s)**" if rem_backlog > 0 else "🟢 **All catch-up lessons cleared!**"
+
+    response_text = (
+        f"🎉 **CATCH-UP LESSON COMPLETED!** 👏\n"
+        f"📖 **Topic:** {topic_str}\n"
+        f"📝 **Journal Notes:** *{user_notes if user_notes else 'Completed catch-up study'}*\n\n"
+        f"🔥 **Streak Protected!** Momentum maintained!\n"
+        f"• {status_str}\n\n"
+        f"👉 Tap: [📅 Return to 'today']({cfg.get('today_link', '')}) | [/today] | [/menu]"
+    )
+    return response_text
 
 def format_today_message(progress):
     day = progress.get("current_day", 1)
@@ -467,9 +825,27 @@ def format_today_message(progress):
 
     streak = progress.get("streak", 0)
     streak_badge = f"🔥 Streak: **{streak} days**" if streak > 0 else "🌱 Start your streak today!"
+    buf = progress.get("buffer_days", 0)
+    buf_badge = f" | 🛡️ Buffer: **+{buf} days ahead**" if buf > 0 else ""
+
+    cfg = load_community_config()
+    today_link = cfg.get("today_link", "")
+    yesterday_link = cfg.get("yesterday_link", "")
+
+    today_str = date.today().isoformat()
+    journal = progress.get("daily_journal", {})
+    today_entries = [j for j in journal.values() if j.get("date") == today_str]
+    today_log_str = ""
+    if today_entries:
+        today_log_str = "\n📝 **Logged Today:**\n" + "\n".join([f"• Day {e.get('day')}: *{e.get('notes')}* ({e.get('minutes')}m)" for e in today_entries]) + "\n"
+
+    b_items = progress.get("backlog_items", [])
+    backlog_str = ""
+    if b_items:
+        backlog_str = f"\n⏳ **Catch-Up Backlog:** [{len(b_items)} Missed Lesson(s) in 'yesterday']({yesterday_link})\n"
 
     msg = (
-        f"📅 **TODAY'S SCHEDULE — DAY {day}/40** ({streak_badge})\n"
+        f"📅 **TODAY'S SCHEDULE — DAY {day}/40** ({streak_badge}{buf_badge})\n"
         f"🏆 **{week_title}**\n\n"
         f"📖 **Topic:** {lesson['topic']}\n"
         f"🎓 **Source Course:** `{lesson['course']}`\n\n"
@@ -477,31 +853,30 @@ def format_today_message(progress):
         f"• {lesson['concepts']}\n\n"
         f"📝 **Practical Chart Exercise:**\n"
         f"👉 {lesson['exercise']}\n\n"
+        f"🎬 **Watch Video in 'today':** [Tap Here to Watch Lesson]({today_link})\n"
+        f"{today_log_str}"
+        f"{backlog_str}"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⏱️ Need a personalized routine? Try `/suggest 30` or `/suggest 60`\n"
-        f"✅ Finished? Send `/complete` to record your progress and keep your streak!"
+        f"👉 **Actions:** [/watched] | [/not_watched] | [/suggest_30] | [/menu]"
     )
     return msg
 
 def format_backlog(progress):
     b = analyze_backlog(progress)
     backlog_count = b["backlog"]
+    cfg = load_community_config()
+    yesterday_link = cfg.get("yesterday_link", "")
+    b_items = progress.get("backlog_items", [])
 
-    if backlog_count <= 0:
+    if backlog_count <= 0 and not b_items:
         status_text = "🟢 **ON TRACK!** You are completely up to date with your curriculum."
         recovery_plan = "Keep up the momentum! Send `/today` to tackle your next lesson."
-    elif backlog_count <= 2:
-        status_text = f"🟡 **MINOR BACKLOG:** You are **{backlog_count} day(s) behind** schedule."
-        recovery_plan = (
-            f"💡 **Recovery Plan:** Complete 1 lesson today and 1 extra lesson this weekend "
-            f"to return to full pace within 3 days."
-        )
     else:
-        status_text = f"🔴 **HIGH BACKLOG:** You are **{backlog_count} days behind** schedule."
+        status_text = f"🟡 **CATCH-UP PENDING:** You have **{max(backlog_count, len(b_items))} lesson(s) in backlog**."
         recovery_plan = (
-            f"💡 **Recovery Catch-Up Sprint:**\n"
-            f"• Use `/suggest 20` to complete quick high-yield sprint sessions.\n"
-            f"• Aim to complete **1.5 to 2 lessons per day** over the next week to clear your backlog."
+            f"💡 **Catch-Up Hub:**\n"
+            f"👉 [Click here to open 'yesterday' and clear missed lessons]({yesterday_link})\n"
+            f"Watch and log them to restore your streak!"
         )
 
     msg = (
@@ -509,10 +884,12 @@ def format_backlog(progress):
         f"• **Days Since Starting:** {b['days_elapsed']} day(s)\n"
         f"• **Target Completed Lessons:** Day {b['target_day']}\n"
         f"• **Actual Completed Lessons:** {b['completed_count']}/40\n"
+        f"• **Buffer Bank:** {progress.get('buffer_days', 0)} days ahead\n"
+        f"• **Missed in 'yesterday':** {len(b_items)} lesson(s)\n"
         f"• **Status:** {status_text}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"{recovery_plan}\n\n"
-        f"⚡ *Log your study time using* `/log <minutes>` *(e.g. `/log 45`)*"
+        f"👉 **Actions:** [/today] | [/suggest_20] | [/stats] | [/menu]"
     )
     return msg
 
@@ -526,18 +903,18 @@ def format_suggest(minutes, progress):
         mode = "⚡ **SPRINT MODE (15–20 Mins)**"
         plan = (
             "1. **5 Mins:** Read the core concepts: *" + lesson['concepts'] + "*\n"
-            "2. **10 Mins:** Watch 1 video clip in your `learning` channel for *" + lesson['topic'] + "*.\n"
+            "2. **10 Mins:** Watch 1 video clip in your `today` channel for *" + lesson['topic'] + "*.\n"
             "3. **5 Mins:** Identify 1 quick screenshot on TradingView matching the setup.\n"
-            "4. Send `/complete` and `/log 20`."
+            "4. Send `/watched 20`."
         )
     elif minutes <= 45:
         mode = "🎯 **STANDARD FOCUS (30–45 Mins)**"
         plan = (
-            "1. **15 Mins:** Watch the complete lesson in `learning` on *" + lesson['topic'] + "*.\n"
+            "1. **15 Mins:** Watch the complete lesson in `today` on *" + lesson['topic'] + "*.\n"
             "2. **15 Mins:** Execute the practical exercise:\n"
             "   👉 *" + lesson['exercise'] + "*\n"
             "3. **10 Mins:** Save 2 clean chart annotations to your journal.\n"
-            "4. Send `/complete` and `/log 40`."
+            "4. Send `/watched 45`."
         )
     else:
         mode = "🧠 **DEEP IMMERSION (60+ Mins)**"
@@ -546,7 +923,7 @@ def format_suggest(minutes, progress):
             "2. **20 Mins:** Historical bar-replay backtesting on TradingView (test at least 5 setups).\n"
             "3. **15 Mins:** Live market markup on 3 different pairs/indices.\n"
             "4. **5 Mins:** Test your retention with `/quiz`.\n"
-            "5. Send `/complete` and `/log 60`."
+            "5. Send `/watched 60`."
         )
 
     msg = (
@@ -554,7 +931,7 @@ def format_suggest(minutes, progress):
         f"📅 **Custom Routine for Day {day}:** *{lesson['topic']}*\n\n"
         f"{plan}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔥 *Focus is your ultimate market edge!*"
+        f"👉 **Actions:** [/watched] | [/not_watched] | [/stats] | [/menu]"
     )
     return msg
 
@@ -567,14 +944,13 @@ def format_stats(progress):
     cur_day = progress.get("current_day", 1)
     streak = progress.get("streak", 0)
     best_streak = progress.get("best_streak", 0)
+    buf = progress.get("buffer_days", 0)
     total_mins = progress.get("total_study_minutes", 0)
     hours = total_mins // 60
     mins = total_mins % 60
 
     b = analyze_backlog(progress)
     backlog_str = "🟢 On Track" if b["backlog"] <= 0 else f"🟡 {b['backlog']} Days Behind"
-
-    # Estimated graduation
     remaining_days = max(40 - completed, 0)
     est_date = date.today() + timedelta(days=remaining_days)
 
@@ -585,21 +961,87 @@ def format_stats(progress):
         f"• **Current Active Day:** Day {cur_day}\n\n"
         f"🔥 **Streaks & Habits:**\n"
         f"• **Current Streak:** {streak} days in a row\n"
-        f"• **All-Time Best Streak:** {best_streak} days\n\n"
+        f"• **All-Time Best Streak:** {best_streak} days\n"
+        f"• **Buffer Bank:** 🛡️ **+{buf} days ahead of schedule**\n\n"
         f"⏱️ **Total Time Invested:**\n"
         f"• **{hours} hrs {mins} mins** logged\n\n"
         f"📅 **Pacing & Schedule:**\n"
         f"• **Backlog Status:** {backlog_str}\n"
         f"• **Target Graduation Date:** {est_date.strftime('%B %d, %Y')}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💡 *Commands:* `/today` | `/suggest 30` | `/backlog` | `/log 45` | `/quiz`"
+        f"👉 **Console:** [/today] | [/suggest_30] | [/backlog] | [/quiz] | [/menu]"
     )
     return msg
 
+def format_menu(progress):
+    day = progress.get("current_day", 1)
+    streak = progress.get("streak", 0)
+    streak_icon = "🔥" if streak > 0 else "🌱"
+    buf = progress.get("buffer_days", 0)
+    buf_str = f" | 🛡️ Buffer: +{buf}d" if buf > 0 else ""
+
+    cfg = load_community_config()
+    learning_link = cfg.get("learning_link", "")
+    today_link = cfg.get("today_link", "")
+    yesterday_link = cfg.get("yesterday_link", "")
+
+    return (
+        f"🎛️ **TRADING MENTOR TOUCH CONSOLE** ({streak_icon} Day {day}/40 | Streak: {streak}d{buf_str})\n\n"
+        f"Tap any command below for instant action:\n\n"
+        f"┌── 🌐 **3-CHANNEL LEARNING SYSTEM** ──┐\n"
+        f"│ • [📅 'today' Active Daily Focus]({today_link})\n"
+        f"│ • [⏳ 'yesterday' Catch-Up Backlog]({yesterday_link})\n"
+        f"│ • [📚 'learning' Master Library]({learning_link})\n"
+        f"└───────────────────────────────┘\n\n"
+        f"┌── 📅 **DAILY STUDY & ACTIONS** ───────┐\n"
+        f"│ • [/today] — Today's Schedule & Notes\n"
+        f"│ • [/watched] — Log Video Watched (+Streak)\n"
+        f"│ • [/not_watched] — Move Unwatched to 'yesterday'\n"
+        f"│ • [/suggest_30] — 30-Min Structured Routine\n"
+        f"└───────────────────────────────┘\n\n"
+        f"┌── 📊 **PROGRESS & HABITS** ──────────┐\n"
+        f"│ • [/stats] — Progress Dashboard & Bar\n"
+        f"│ • [/backlog] — Pacing Audit & Catch-Up Plan\n"
+        f"│ • [/log_45] — Log 45 Study Minutes\n"
+        f"│ • [/harvester_status] — 3-Day Scraper Status\n"
+        f"└───────────────────────────────┘\n\n"
+        f"┌── 🧠 **MASTERY & TOOLS** ────────────┐\n"
+        f"│ • [/quiz] — Multiple-Choice Trading Quiz\n"
+        f"│ • [/roadmap] — 8-Week Curriculum Roadmap\n"
+        f"│ • [/links] — 10 Google Drive Masterclasses\n"
+        f"│ • [/remind_test] — Test Automated Alerts\n"
+        f"└───────────────────────────────┘\n\n"
+        f"💡 *Tip: Reply directly to any video in 'today' or 'yesterday' with your notes to auto-log!*"
+    )
+
+def format_harvester_status():
+    tracker_file = Path("harvested_tracker.json")
+    t_data = {"harvested_messages": [], "last_run": None, "mega_uploaded": []}
+    if tracker_file.exists():
+        try:
+            with open(tracker_file, "r") as f:
+                t_data = json.load(f)
+        except Exception:
+            pass
+
+    harvested_cnt = len(t_data.get("harvested_messages", []))
+    last_run = t_data.get("last_run", "Not run yet")
+    cfg = load_community_config()
+    learning_link = cfg.get("learning_link", "")
+
+    return (
+        f"🔄 **AUTOMATED 3-DAY HARVESTER STATUS** ⚙️\n\n"
+        f"• **Destination Channel:** [learning (Master Library)]({learning_link})\n"
+        f"• **Refresh Cycle:** Every **72 Hours (3 Days)**\n"
+        f"• **Total New Videos Harvested:** **{harvested_cnt} videos**\n"
+        f"• **Last Scrape Execution:** `{last_run}`\n"
+        f"• **Monitored Sources:** Top 9 trading channels + Account subscriptions\n"
+        f"• **Encoding Mode:** FastStart MP4 (`+movflags +faststart`) + Thumbnails\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 **Actions:** [/menu] | [/today] | [/stats]"
+    )
+
 async def notification_daemon(client):
-    """
-    Background loop that sends morning study briefing and evening backlog nudge.
-    """
     print("[+] Background Notification Engine active.", flush=True)
     while True:
         try:
@@ -608,45 +1050,49 @@ async def notification_daemon(client):
             progress = load_progress()
 
             if progress.get("notifications_enabled", True):
-                # 1. Morning Daily Briefing (08:30 AM)
                 m_h = progress.get("morning_hour", 8)
                 m_m = progress.get("morning_min", 30)
                 if now.hour == m_h and now.minute == m_m and progress.get("last_morning_notif") != today_str:
+                    # Check if previous day's video was left uncompleted in 'today' -> move to 'yesterday'
+                    if progress.get("today_posted_day") and progress.get("today_posted_day") not in progress.get("completed_days", []):
+                        await move_today_to_yesterday(client, progress, reason="rollover")
+                    else:
+                        await post_today_lesson(client, progress)
+
                     msg = (
                         "☀️ **GOOD MORNING! TIME FOR YOUR DAILY TRADING SESSION** 📈\n\n"
                         + format_today_message(progress)
                     )
                     try:
-                        await client.send_message('me', msg)
+                        await client.send_message('me', msg, link_preview=False)
                         progress["last_morning_notif"] = today_str
                         save_progress(progress)
                         print(f"[Notif] Sent morning briefing for {today_str}", flush=True)
                     except Exception as e:
                         print(f"[Notif Error] Morning: {e}", flush=True)
 
-                # 2. Evening Check-in & Backlog Nudge (20:30 PM)
                 e_h = progress.get("evening_hour", 20)
                 e_m = progress.get("evening_min", 30)
                 if now.hour == e_h and now.minute == e_m and progress.get("last_evening_notif") != today_str:
                     cur_day = progress.get("current_day", 1)
                     if cur_day not in progress.get("completed_days", []):
-                        b_info = analyze_backlog(progress)
+                        cfg = load_community_config()
                         msg = (
                             f"🌙 **EVENING CHECK-IN — DON'T BREAK YOUR STREAK!** 🔥\n\n"
                             f"You haven't completed **Day {cur_day}** yet today.\n"
-                            f"Take 15–20 minutes tonight to keep your momentum going!\n\n"
-                            f"👉 Send `/suggest 20` for a fast 20-minute evening session,\n"
-                            f"or send `/complete` if you already finished your chart study."
+                            f"Take 15–20 minutes tonight to watch the video in [today]({cfg.get('today_link', '')})!\n\n"
+                            f"👉 Reply to the video with your notes or send `[/watched 20]`,\n"
+                            f"or tap `[/not_watched]` to move it to 'yesterday' catch-up."
                         )
                         try:
-                            await client.send_message('me', msg)
+                            await client.send_message('me', msg, link_preview=False)
                             progress["last_evening_notif"] = today_str
                             save_progress(progress)
                             print(f"[Notif] Sent evening check-in for {today_str}", flush=True)
                         except Exception as e:
                             print(f"[Notif Error] Evening: {e}", flush=True)
 
-            await asyncio.sleep(40) # Check every 40 seconds
+            await asyncio.sleep(40)
         except Exception as err:
             print(f"[Daemon Exception]: {err}", flush=True)
             await asyncio.sleep(60)
@@ -661,7 +1107,6 @@ async def main():
 
     print("[+] Starting Enhanced Trading Mentor Bot service...", flush=True)
 
-    # Start web health-check server immediately (Render Free Web Service requirement)
     try:
         async def handle_health(request):
             return web.Response(text="Trading Mentor Bot Online 24/7!")
@@ -696,60 +1141,65 @@ async def main():
     me = await client.get_me()
     print(f"[+] Bot active as: {getattr(me, 'first_name', '')} (@{getattr(me, 'username', 'N/A')})", flush=True)
 
+    cfg = load_community_config()
+    today_channel_id = cfg.get("today_id")
+    yesterday_channel_id = cfg.get("yesterday_id")
+
+    # Post Day 1 lesson immediately if needed
+    init_progress = load_progress()
+    await post_today_lesson(client, init_progress)
+
     # Start Background Notification Daemon
     asyncio.create_task(notification_daemon(client))
 
-    @client.on(events.NewMessage(pattern=r'^/(start|help)$'))
-    async def handle_start(event):
-        help_text = (
-            "🤖 **WELCOME TO YOUR ADVANCED TRADING MENTOR BOT!** 📈\n\n"
-            "I will track your learning progress, analyze backlogs, trigger smart study notifications, "
-            "and suggest custom daily routines based on your available time.\n\n"
-            "📌 **Core Commands:**\n"
-            "• `/today` or `/schedule` – Today's lesson & chart assignment\n"
-            "• `/suggest <mins>` – Custom plan for your available time (e.g. `/suggest 30`)\n"
-            "• `/complete` – Mark lesson finished & increment streak\n"
-            "• `/backlog` – Analyze your study pace vs. target schedule\n"
-            "• `/stats` – View streaks, hours logged & progress bar\n"
-            "• `/log <mins>` – Log study time (e.g. `/log 45`)\n"
-            "• `/roadmap` – View full 8-week curriculum breakdown\n"
-            "• `/week <1-8>` – View daily plan for any week\n"
-            "• `/quiz` – Test your knowledge with a trading quiz\n"
-            "• `/remind <on|off|test>` – Control automated daily notifications\n"
-            "• `/links` – Direct access to all Google Drive masterclasses\n"
-            "• `/reset` – Restart schedule from Day 1\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "🚀 *Send* `/today` *or* `/suggest 30` *to begin!*"
-        )
-        await event.respond(help_text)
+    @client.on(events.NewMessage(pattern=r'^/(start|help|menu)$'))
+    async def handle_menu(event):
+        progress = load_progress()
+        await event.respond(format_menu(progress), link_preview=False)
 
     @client.on(events.NewMessage(pattern=r'^/(today|schedule)$'))
     async def handle_today(event):
         progress = load_progress()
-        await event.respond(format_today_message(progress))
+        await post_today_lesson(client, progress)
+        await event.respond(format_today_message(progress), link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/suggest(?:\s+(\d+))?$'))
+    @client.on(events.NewMessage(pattern=r'^/(not_watched|skip_to_yesterday)$'))
+    async def handle_not_watched(event):
+        progress = load_progress()
+        ok = await move_today_to_yesterday(client, progress, reason="manual")
+        if ok:
+            cur_p = load_progress()
+            await event.respond(
+                f"📦 **Lesson moved to 'yesterday' catch-up channel!**\n"
+                f"• Cleaned 'today' channel and loaded Day {cur_p.get('current_day')}!\n\n"
+                f"👉 Tap: [📅 Open 'today']({cfg.get('today_link', '')}) | [⏳ Open 'yesterday']({cfg.get('yesterday_link', '')}) | [/menu]",
+                link_preview=False
+            )
+        else:
+            await event.respond("⚠️ No active lesson in 'today' to move.")
+
+    @client.on(events.NewMessage(pattern=r'^/suggest(?:_(\d+)|\s+(\d+))?$'))
     async def handle_suggest(event):
-        mins_str = event.pattern_match.group(1)
+        mins_str = event.pattern_match.group(1) or event.pattern_match.group(2)
         mins = int(mins_str) if mins_str else 30
         progress = load_progress()
-        await event.respond(format_suggest(mins, progress))
+        await event.respond(format_suggest(mins, progress), link_preview=False)
 
     @client.on(events.NewMessage(pattern=r'^/backlog$'))
     async def handle_backlog(event):
         progress = load_progress()
-        await event.respond(format_backlog(progress))
+        await event.respond(format_backlog(progress), link_preview=False)
 
     @client.on(events.NewMessage(pattern=r'^/stats$'))
     async def handle_stats(event):
         progress = load_progress()
-        await event.respond(format_stats(progress))
+        await event.respond(format_stats(progress), link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/log(?:\s+(\d+))?$'))
+    @client.on(events.NewMessage(pattern=r'^/log(?:_(\d+)|\s+(\d+))?$'))
     async def handle_log(event):
-        mins_str = event.pattern_match.group(1)
+        mins_str = event.pattern_match.group(1) or event.pattern_match.group(2)
         if not mins_str:
-            await event.respond("⚠️ Please specify minutes studied. Example: `/log 45`")
+            await event.respond("⚠️ Please specify minutes studied. Example: `/log 45` or [/log_45]")
             return
         mins = int(mins_str)
         progress = load_progress()
@@ -759,105 +1209,62 @@ async def main():
         total_m = progress["total_study_minutes"] % 60
         await event.respond(
             f"⏱️ **LOGGED {mins} MINUTES OF STUDY TIME!** 👏\n\n"
-            f"• **Total Time Invested:** {total_h} hrs {total_m} mins\n"
-            f"Send `/stats` to view your updated dashboard."
+            f"• **Total Time Invested:** {total_h} hrs {total_m} mins\n\n"
+            f"👉 **Actions:** [/stats] | [/today] | [/menu]"
         )
 
-    @client.on(events.NewMessage(pattern=r'^/complete$'))
-    async def handle_complete(event):
-        progress = load_progress()
-        cur_day = progress.get("current_day", 1)
-        today_str = date.today().isoformat()
-        last_date = progress.get("last_completed_date")
+    @client.on(events.NewMessage(pattern=r'^/harvester_status$'))
+    async def handle_harvester(event):
+        await event.respond(format_harvester_status(), link_preview=False)
 
-        # Update streak
-        if last_date:
-            try:
-                last_d = date.fromisoformat(last_date)
-                delta = (date.today() - last_d).days
-                if delta == 1:
-                    progress["streak"] = progress.get("streak", 0) + 1
-                elif delta > 1:
-                    progress["streak"] = 1
-            except Exception:
-                progress["streak"] = 1
-        else:
-            progress["streak"] = 1
-
-        progress["best_streak"] = max(progress.get("best_streak", 0), progress["streak"])
-        progress["last_completed_date"] = today_str
-
-        if cur_day not in progress.get("completed_days", []):
-            progress.setdefault("completed_days", []).append(cur_day)
-
-        progress["current_day"] = cur_day + 1
-        save_progress(progress)
-
-        await event.respond(
-            f"🎉 **DAY {cur_day} MARKED AS COMPLETED!**\n\n"
-            f"🔥 **Current Streak:** {progress['streak']} days in a row!\n"
-            f"🏆 **Next Lesson:** Day {cur_day + 1}\n\n"
-            f"Send `/today` to preview tomorrow's study topic, or `/stats` for full analytics!"
-        )
-
-    @client.on(events.NewMessage(pattern=r'^(?:/(?:watched|done)|watched|done)(?:\s+(\d+))?$'))
-    async def handle_watched(event):
-        mins_str = event.pattern_match.group(1)
+    @client.on(events.NewMessage(pattern=r'^/(complete|watched|done)(?:\s+(\d+))?$'))
+    async def handle_complete_cmd(event):
+        mins_str = event.pattern_match.group(2)
         mins = int(mins_str) if mins_str else 30
-        
         reply_msg = await event.get_reply_message()
-        video_title = ""
-        if reply_msg:
-            if reply_msg.file and reply_msg.file.name:
-                video_title = reply_msg.file.name
-            elif reply_msg.message:
-                video_title = reply_msg.message.splitlines()[0][:50]
-        
-        progress = load_progress()
-        cur_day = progress.get("current_day", 1)
-        today_str = date.today().isoformat()
-        last_date = progress.get("last_completed_date")
+        user_notes = ""
+        if reply_msg and reply_msg.message:
+            user_notes = reply_msg.message[:100]
 
-        # Update streak
-        if last_date:
-            try:
-                last_d = date.fromisoformat(last_date)
-                delta = (date.today() - last_d).days
-                if delta == 1:
-                    progress["streak"] = progress.get("streak", 0) + 1
-                elif delta > 1:
-                    progress["streak"] = 1
-            except Exception:
-                progress["streak"] = 1
-        else:
-            progress["streak"] = 1
+        # Check if replying in yesterday channel
+        chat_id = event.chat_id
+        if yesterday_channel_id and (chat_id == yesterday_channel_id or chat_id == -1000000000000 - yesterday_channel_id):
+            if reply_msg:
+                resp = await complete_catchup_lesson(client, reply_msg.id, mins, user_notes)
+                await event.respond(resp, link_preview=False)
+                return
 
-        progress["best_streak"] = max(progress.get("best_streak", 0), progress["streak"])
-        progress["last_completed_date"] = today_str
-        progress["total_study_minutes"] = progress.get("total_study_minutes", 0) + mins
+        resp = await complete_active_lesson(client, mins, user_notes)
+        await event.respond(resp, link_preview=False)
 
-        if cur_day not in progress.get("completed_days", []):
-            progress.setdefault("completed_days", []).append(cur_day)
+    # Monitor channel message replies in 'today' and 'yesterday'
+    @client.on(events.NewMessage(chats=[today_channel_id, yesterday_channel_id]))
+    async def handle_channel_replies(event):
+        text = event.raw_text.strip()
+        if text.startswith('/'):
+            return # Handled by command regexes
 
-        progress["current_day"] = cur_day + 1
-        save_progress(progress)
+        reply_msg = await event.get_reply_message()
+        if not reply_msg:
+            return
 
-        target_note = f"for **{video_title}** " if video_title else ""
-        total_h = progress["total_study_minutes"] // 60
-        total_m = progress["total_study_minutes"] % 60
+        chat_id = event.chat_id
+        if today_channel_id and (chat_id == today_channel_id or chat_id == -1000000000000 - today_channel_id):
+            if "not_watched" in text.lower():
+                progress = load_progress()
+                await move_today_to_yesterday(client, progress, reason="manual")
+                await event.respond("📦 Moved to 'yesterday' catch-up channel! 'today' refreshed!")
+            else:
+                resp = await complete_active_lesson(client, minutes=30, user_notes=text)
+                await event.respond(resp, link_preview=False)
 
-        await event.respond(
-            f"🎬 **VIDEO WATCH LOGGED {target_note}!** 👏\n\n"
-            f"• **Session Time Logged:** +{mins} mins\n"
-            f"• **Total Time Invested:** {total_h} hrs {total_m} mins\n"
-            f"• **Day {cur_day} Completed!** 🔥 Streak: **{progress['streak']} days**\n"
-            f"• **Advanced To:** Day {cur_day + 1}\n\n"
-            f"Send `/today` to preview your next lesson, or `/stats` for full analytics!"
-        )
+        elif yesterday_channel_id and (chat_id == yesterday_channel_id or chat_id == -1000000000000 - yesterday_channel_id):
+            resp = await complete_catchup_lesson(client, reply_msg.id, minutes=30, user_notes=text)
+            await event.respond(resp, link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/remind(?:\s+(on|off|test))?$'))
+    @client.on(events.NewMessage(pattern=r'^/remind(?:_([a-zA-Z]+)|\s+([a-zA-Z]+))?$'))
     async def handle_remind(event):
-        action = event.pattern_match.group(1)
+        action = event.pattern_match.group(1) or event.pattern_match.group(2)
         progress = load_progress()
         if not action or action == 'test':
             # Send immediate test notification
