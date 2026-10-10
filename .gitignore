@@ -1,0 +1,7 @@
+.env
+*.session
+*.session-journal
+temp_*
+__pycache__/
+*.pyc
+user_progress.json
