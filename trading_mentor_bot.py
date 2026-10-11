@@ -18,6 +18,7 @@ from goal_roadmap_engine import (
     get_current_phase,
     get_lesson_for_day
 )
+import daily_topic_curator as dtc
 
 load_dotenv()
 API_ID = int(os.getenv('API_ID'))
@@ -533,80 +534,111 @@ async def post_today_lesson(client, progress):
     if cur_day > 120:
         return None
 
-    # Check if already active in today
-    if progress.get("today_posted_day") == cur_day and progress.get("today_msg_id"):
-        return progress["today_msg_id"]
-
-    week_num, week_title, lesson = get_lesson_by_day(cur_day)
-    if not lesson:
-        return None
+    today_serials = progress.get("today_serials", {})
+    # Check if already active in today with all 10 videos
+    if progress.get("today_posted_day") == cur_day and len(today_serials) >= 10:
+        return progress.get("today_msg_id")
 
     phase = get_current_phase(cur_day)
-    goal_link = cfg.get("goal_link", "")
-    goal_str = f"• [🎯 6-Month Roadmap & Dashboard]({goal_link})\n" if goal_link else ""
+    curated_vids = dtc.get_curated_10_videos(cur_day)
+    if not curated_vids:
+        return None
 
     try:
         today_channel = await client.get_entity(today_id)
         learning_channel = await client.get_entity(learning_id) if learning_id else None
 
-        v_info = get_catalog_video(cur_day)
-        source_media = None
-        if learning_channel and v_info:
+        primary_msg_id = None
+        newly_posted = 0
+
+        # Scan today_channel in case videos are already present
+        if len(today_serials) < 10:
             try:
-                src_msg = await client.get_messages(learning_channel, ids=v_info["id"])
-                if src_msg and src_msg.media:
-                    source_media = src_msg.media
-            except Exception as me:
-                print(f"[!] Source media note: {me}", flush=True)
+                async for m in client.iter_messages(today_channel, limit=25):
+                    text = m.message or ""
+                    match = re.search(r'\[Video #(\d+)\]', text)
+                    if match:
+                        s_found = match.group(1)
+                        if s_found not in today_serials:
+                            lines = text.splitlines()
+                            v_title = lines[0] if lines else f"Video #{s_found}"
+                            v_title = re.sub(r'[*_#`🎬🚀]', '', v_title).strip()
+                            today_serials[s_found] = {
+                                "msg_id": m.id,
+                                "title": v_title,
+                                "type": "curriculum" if s_found == "1" else "topic_deepdive",
+                                "day": cur_day
+                            }
+                            if s_found == "1":
+                                primary_msg_id = m.id
+            except Exception as se:
+                print(f"[!] Today channel scan note: {se}", flush=True)
 
-        caption = (
-            f"🎬 **[Video #1] TODAY'S ACTIVE LESSON — DAY {cur_day}/120** 🚀\n"
-            f"🏆 **{phase['title']}**\n"
-            f"📌 **{week_title}**\n\n"
-            f"📖 **Topic:** {lesson['topic']}\n"
-            f"🎓 **Source Course:** `{lesson['course']}`\n\n"
-            f"🔍 **Key Concepts to Master:**\n"
-            f"• {lesson['concepts']}\n\n"
-            f"📝 **Practical Chart Exercise:**\n"
-            f"👉 {lesson['exercise']}\n\n"
-            f"{goal_str}"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"⚡ **QUICK SERIAL LOGGING:**\n"
-            f"👉 Send: `/log 1` (or `/log 1 <notes>`)\n"
-            f"• Or reply to this video with `[/watched]`\n"
-            f"• Not watching today? Tap: `[/not_watched]` (moves to 'yesterday')\n\n"
-            f"👉 **Actions:** [/log 1] | [/goal] | [/milestone] | [/ask] | [/stats] | [/menu]"
-        )
+        if len(today_serials) >= 10:
+            progress["today_posted_day"] = cur_day
+            progress["today_msg_id"] = today_serials.get("1", {}).get("msg_id", progress.get("today_msg_id"))
+            progress["today_serials"] = today_serials
+            save_progress(progress)
+            return progress["today_msg_id"]
 
-        if source_media:
-            msg = await client.send_file(
-                today_channel,
-                source_media,
-                caption=caption,
-                supports_streaming=True
-            )
-        else:
-            msg = await client.send_message(today_channel, caption)
+        for v in curated_vids:
+            s_num = v["serial"]
+            s_key = str(s_num)
 
-        try:
-            await client.pin_message(today_channel, msg.id, notify=False)
-        except Exception:
-            pass
+            # If already present for cur_day, retain
+            if s_key in today_serials and today_serials[s_key].get("day") == cur_day:
+                if s_num == 1:
+                    primary_msg_id = today_serials[s_key].get("msg_id")
+                continue
+
+            src_msg_id = v["msg_id"]
+            source_media = None
+            if learning_channel and src_msg_id:
+                try:
+                    src_msg = await client.get_messages(learning_channel, ids=src_msg_id)
+                    if src_msg and src_msg.media:
+                        source_media = src_msg.media
+                except Exception as me:
+                    print(f"[!] Source media note for serial {s_num}: {me}", flush=True)
+
+            caption = dtc.format_video_caption(cur_day, v, phase["title"])
+
+            if source_media:
+                msg = await client.send_file(
+                    today_channel,
+                    source_media,
+                    caption=caption,
+                    supports_streaming=True
+                )
+            else:
+                msg = await client.send_message(today_channel, caption)
+
+            today_serials[s_key] = {
+                "msg_id": msg.id,
+                "title": v["title"],
+                "type": "curriculum" if s_num == 1 else "topic_deepdive",
+                "day": cur_day
+            }
+            newly_posted += 1
+
+            if s_num == 1:
+                primary_msg_id = msg.id
+                try:
+                    await client.pin_message(today_channel, msg.id, notify=False)
+                except Exception:
+                    pass
+
+            await asyncio.sleep(0.8)
 
         progress["today_posted_day"] = cur_day
-        progress["today_msg_id"] = msg.id
-        progress.setdefault("today_serials", {})["1"] = {
-            "msg_id": msg.id,
-            "title": f"Day {cur_day}: {lesson['topic']}",
-            "type": "curriculum",
-            "day": cur_day
-        }
+        progress["today_msg_id"] = primary_msg_id or progress.get("today_msg_id")
+        progress["today_serials"] = today_serials
         save_progress(progress)
-        print(f"[+] Posted and pinned Day {cur_day} video in 'today' channel (Msg ID: {msg.id})", flush=True)
-        return msg.id
+        print(f"[+] Posted/updated 10 daily videos for Day {cur_day} in 'today' channel ({newly_posted} newly sent)", flush=True)
+        return progress["today_msg_id"]
 
     except Exception as e:
-        print(f"[!] Error posting today's lesson: {e}", flush=True)
+        print(f"[!] Error posting today's 10 videos: {e}", flush=True)
         return None
 
 async def move_today_to_yesterday(client, progress, reason="manual"):
@@ -769,6 +801,8 @@ async def complete_active_lesson(client, minutes=30, user_notes=""):
     progress["current_day"] = cur_day + 1
     progress["today_posted_day"] = None
     progress["today_msg_id"] = None
+    progress["today_serials"] = {}
+    progress["completed_serials"] = []
     save_progress(progress)
 
     # Post next lesson immediately so user can binge-study!
@@ -1195,28 +1229,45 @@ async def main():
             return web.Response(text="Trading Mentor Bot Online 24/7!")
 
         async def handle_status(request):
-            c = client_holder.get("client")
-            p = load_progress()
-            cfg = load_community_config()
-            is_conn = c.is_connected() if c else False
-            is_auth = await c.is_user_authorized() if c else False
-            me_obj = await c.get_me() if (c and is_auth) else None
-            return web.json_response({
-                "status": "online",
-                "connected": is_conn,
-                "authorized": is_auth,
-                "user": getattr(me_obj, "first_name", "N/A"),
-                "username": getattr(me_obj, "username", "N/A"),
-                "current_day": p.get("current_day"),
-                "streak": p.get("streak"),
-                "buffer_days": p.get("buffer_days")
-            })
+            try:
+                c = client_holder.get("client")
+                p = load_progress()
+                is_conn = c.is_connected() if c else False
+                is_auth = False
+                user_name = "K.S. Tripathi"
+                user_handle = "kst_personal"
+                if c and is_conn:
+                    try:
+                        is_auth = await c.is_user_authorized()
+                        if is_auth:
+                            me_obj = await c.get_me()
+                            user_name = getattr(me_obj, "first_name", user_name)
+                            user_handle = getattr(me_obj, "username", user_handle)
+                    except Exception:
+                        pass
+                return web.json_response({
+                    "status": "online",
+                    "connected": is_conn,
+                    "authorized": is_auth,
+                    "user": user_name,
+                    "username": user_handle,
+                    "current_day": p.get("current_day"),
+                    "streak": p.get("streak"),
+                    "buffer_days": p.get("buffer_days"),
+                    "today_videos_count": len(p.get("today_serials", {}))
+                })
+            except Exception as e:
+                return web.json_response({"status": "online", "error": str(e)})
+
+        async def handle_progress(request):
+            return web.json_response(load_progress())
 
         port = int(os.getenv("PORT", "10000"))
         app = web.Application()
         app.router.add_get('/', handle_health)
         app.router.add_get('/health', handle_health)
         app.router.add_get('/status', handle_status)
+        app.router.add_get('/progress', handle_progress)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, '0.0.0.0', port)
@@ -1337,23 +1388,27 @@ async def main():
             week_n, week_t, lesson = get_lesson_by_day(cur_day)
             cur_topic = lesson["topic"] if lesson else f"Day {cur_day} Lesson"
 
-            lines = ["📋 **ACTIVE VIDEOS IN TODAY'S CLASSROOM ('today'):**\n"]
-            lines.append(f"1️⃣ **[#1] Day {cur_day}: {cur_topic}** *(Active Curriculum Lesson)*")
+            completed_serials = set(progress.get("completed_serials", []))
+            lines = [f"📋 **TODAY'S 10 VIDEOS (DAY {cur_day}: {cur_topic}):**\n"]
 
-            for s_str in sorted(today_serials.keys(), key=lambda x: int(x)):
-                if s_str == "1":
-                    continue
-                s_info = today_serials[s_str]
-                is_done = int(s_str) in progress.get("completed_serials", [])
-                status_icon = "✅ (Completed)" if is_done else f"{s_str}️⃣"
-                lines.append(f"{status_icon} **[#{s_str}] {s_info.get('title', 'Trading Video')}**")
+            digit_emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟"}
+
+            for s_int in range(1, 11):
+                s_str = str(s_int)
+                s_info = today_serials.get(s_str, {})
+                title = s_info.get("title", f"Video #{s_int}")
+                emoji = digit_emojis.get(s_int, f"[{s_int}]")
+                is_done = s_int in completed_serials or (s_int == 1 and cur_day in progress.get("completed_days", []))
+                status = "✅ Completed" if is_done else f"⏳ Ready ➔ `/log {s_int}`"
+                role = "Core Curriculum" if s_int == 1 else "Topic Deep-Dive"
+                lines.append(f"{emoji} **[#{s_int}] {title}** *({role})*\n    └ {status}")
 
             lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             lines.append("⚡ **EASY LOGGING BY SERIAL NUMBER:**")
-            lines.append("• `/log 1` — Log Video #1 (Curriculum Lesson)")
-            lines.append("• `/log 2` — Log Video #2 (Extra Video: +1 Buffer Day banked!)")
-            lines.append("• `/log 1 45 Understood liquidity sweep` — Log with custom time & notes!")
-            lines.append(f"\n👉 Tap: [📅 Open 'today']({cfg.get('today_link', '')}) | [/stats] | [/menu]")
+            lines.append("• `/log 1` ➔ Log Core Curriculum (advances streak to next day)")
+            lines.append("• `/log 2` .. `/log 10` ➔ Log Extra Video (+1 Buffer Day banked each!)")
+            lines.append("• `/log <N> 45 <notes>` ➔ Log with custom minutes & notes!")
+            lines.append(f"\n👉 Tap: [📅 Open 'today']({cfg.get('today_link', '')}) | [/stats] | [/goal] | [/menu]")
 
             await event.respond("\n".join(lines), link_preview=False)
             return
@@ -1416,6 +1471,7 @@ async def main():
 
             total_h = progress["total_study_minutes"] // 60
             total_m = progress["total_study_minutes"] % 60
+            done_count = len(progress.get("completed_serials", []))
 
             resp = (
                 f"🎉 **[VIDEO #{serial_num}] LOGGED AS WATCHED!** 🏆\n\n"
@@ -1424,8 +1480,9 @@ async def main():
                 f"🛡️ **BUFFER ACCELERATOR:** 🛡️ **+1 Buffer Day Banked!**\n"
                 f"You are now **{cur_buf} day(s) ahead of schedule!**\n"
                 f"🔥 **Habit Streak:** {progress['streak']} days active!\n"
+                f"📊 **Today's Progress:** {done_count}/10 videos completed!\n"
                 f"📝 **Journal Entry:** *{notes if notes else 'Completed study session'}*\n\n"
-                f"✨ *Great job accelerating your learning! Send `/log` to see remaining active videos.*"
+                f"✨ *Great job! Send `/log` to see your live 10-video checklist.*"
             )
             await event.respond(resp, link_preview=False)
             return
