@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+import aiohttp
 from aiohttp import web
 from trading_ai_tutor import ask_trading_tutor
 from video_search_engine import search_learning_videos, get_curated_playlist, PLAYLIST_TOPICS
@@ -1164,6 +1165,19 @@ async def notification_daemon(client):
             print(f"[Daemon Exception]: {err}", flush=True)
             await asyncio.sleep(60)
 
+async def render_keepalive_daemon():
+    await asyncio.sleep(45)
+    url = os.getenv("RENDER_EXTERNAL_URL", "https://trading-mentor-bot.onrender.com/health")
+    print(f"[+] KeepAlive daemon running: self-pinging {url} every 10 mins to prevent sleep.", flush=True)
+    while True:
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url, timeout=15) as r:
+                    print(f"[KeepAlive] Ping status {r.status} (awake)", flush=True)
+        except Exception as e:
+            print(f"[KeepAlive Note]: {e}", flush=True)
+        await asyncio.sleep(600)
+
 async def main():
     sys.stdout.reconfigure(line_buffering=True)
     if sys.stdout.encoding != 'utf-8':
@@ -1174,18 +1188,40 @@ async def main():
 
     print("[+] Starting Enhanced Trading Mentor Bot service...", flush=True)
 
+    client_holder = {}
+
     try:
         async def handle_health(request):
             return web.Response(text="Trading Mentor Bot Online 24/7!")
+
+        async def handle_status(request):
+            c = client_holder.get("client")
+            p = load_progress()
+            cfg = load_community_config()
+            is_conn = c.is_connected() if c else False
+            is_auth = await c.is_user_authorized() if c else False
+            me_obj = await c.get_me() if (c and is_auth) else None
+            return web.json_response({
+                "status": "online",
+                "connected": is_conn,
+                "authorized": is_auth,
+                "user": getattr(me_obj, "first_name", "N/A"),
+                "username": getattr(me_obj, "username", "N/A"),
+                "current_day": p.get("current_day"),
+                "streak": p.get("streak"),
+                "buffer_days": p.get("buffer_days")
+            })
+
         port = int(os.getenv("PORT", "10000"))
         app = web.Application()
         app.router.add_get('/', handle_health)
         app.router.add_get('/health', handle_health)
+        app.router.add_get('/status', handle_status)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, '0.0.0.0', port)
         await site.start()
-        print(f"[+] Health-check HTTP server running on port {port} (Render compatible).", flush=True)
+        print(f"[+] Health & telemetry HTTP server running on port {port} (Render compatible).", flush=True)
     except Exception as he:
         print(f"[!] Health-check server warning: {he}", flush=True)
 
@@ -1205,6 +1241,8 @@ async def main():
             print("Error: Account not authorized.", flush=True)
             sys.exit(1)
 
+    client_holder["client"] = client
+
     me = await client.get_me()
     print(f"[+] Bot active as: {getattr(me, 'first_name', '')} (@{getattr(me, 'username', 'N/A')})", flush=True)
 
@@ -1222,19 +1260,22 @@ async def main():
     # Start Autonomous Continuous Video Uploader Daemon inside the Bot
     asyncio.create_task(run_autonomous_turbo_harvester(client))
 
-    @client.on(events.NewMessage(pattern=r'^/(start|help|menu)$'))
+    # Start 24/7 Keep-Alive Self-Ping Daemon to prevent Render sleep
+    asyncio.create_task(render_keepalive_daemon())
+
+    @client.on(events.NewMessage(pattern=r'(?i)^/(start|help|menu)(?:@\w+)?(?:\s+.*)?$'))
     async def handle_menu(event):
         progress = load_progress()
         await event.respond(format_menu(progress), link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/goal$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/goal(?:@\w+)?(?:\s+.*)?$'))
     async def handle_goal(event):
         progress = load_progress()
         cfg = load_community_config()
         msg = render_master_dashboard(progress, cfg)
         await event.respond(msg, link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/milestone$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/milestone(?:@\w+)?(?:\s+.*)?$'))
     async def handle_milestone(event):
         progress = load_progress()
         cfg = load_community_config()
@@ -1243,13 +1284,13 @@ async def main():
         msg = render_phase_post(phase["month"], cfg)
         await event.respond(msg, link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/(today|schedule)$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/(today|schedule)(?:@\w+)?(?:\s+.*)?$'))
     async def handle_today(event):
         progress = load_progress()
         await post_today_lesson(client, progress)
         await event.respond(format_today_message(progress), link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/(not_watched|skip_to_yesterday)$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/(not_watched|skip_to_yesterday)(?:@\w+)?(?:\s+.*)?$'))
     async def handle_not_watched(event):
         progress = load_progress()
         ok = await move_today_to_yesterday(client, progress, reason="manual")
@@ -1264,24 +1305,24 @@ async def main():
         else:
             await event.respond("⚠️ No active lesson in 'today' to move.")
 
-    @client.on(events.NewMessage(pattern=r'^/suggest(?:_(\d+)|\s+(\d+))?$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/suggest(?:_(\d+)|\s+(\d+))?(?:@\w+)?$'))
     async def handle_suggest(event):
         mins_str = event.pattern_match.group(1) or event.pattern_match.group(2)
         mins = int(mins_str) if mins_str else 30
         progress = load_progress()
         await event.respond(format_suggest(mins, progress), link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/backlog$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/backlog(?:@\w+)?(?:\s+.*)?$'))
     async def handle_backlog(event):
         progress = load_progress()
         await event.respond(format_backlog(progress), link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/stats$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/stats(?:@\w+)?(?:\s+.*)?$'))
     async def handle_stats(event):
         progress = load_progress()
         await event.respond(format_stats(progress), link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/log(?:_([a-zA-Z0-9]+))?(?:\s+(.*))?$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/log(?:_([a-zA-Z0-9]+))?(?:@\w+)?(?:\s+(.*))?$'))
     async def handle_log(event):
         sub_arg = (event.pattern_match.group(1) or "").strip()
         main_arg = (event.pattern_match.group(2) or "").strip()
@@ -1408,11 +1449,11 @@ async def main():
             f"⚠️ Unknown serial number `{first_token}`. Send `/log` to see active video numbers (e.g. `/log 1`, `/log 2`)."
         )
 
-    @client.on(events.NewMessage(pattern=r'^/harvester_status$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/harvester_status(?:@\w+)?(?:\s+.*)?$'))
     async def handle_harvester(event):
         await event.respond(format_harvester_status(), link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/(complete|watched|done)(?:\s+(\d+))?$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/(complete|watched|done)(?:@\w+)?(?:\s+(\d+))?$'))
     async def handle_complete_cmd(event):
         mins_str = event.pattern_match.group(2)
         mins = int(mins_str) if mins_str else 30
@@ -1484,7 +1525,7 @@ async def main():
             ans = await ask_trading_tutor(text, context_video=v_ctx)
             await event.reply(ans, link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/(tutor|mentor)(?:\s+(on|off|stop))?$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/(tutor|mentor)(?:@\w+)?(?:\s+(on|off|stop))?$'))
     async def handle_tutor_mode(event):
         arg = (event.pattern_match.group(2) or "").lower().strip()
         progress = load_progress()
@@ -1503,7 +1544,7 @@ async def main():
             "• Send `/tutor off` anytime to return to standard command mode."
         )
 
-    @client.on(events.NewMessage(pattern=r'^/ask(?:\s+(.+))?$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/ask(?:@\w+)?(?:\s+(.+))?$'))
     async def handle_ask(event):
         question = (event.pattern_match.group(1) or "").strip()
         if not question:
@@ -1527,7 +1568,7 @@ async def main():
         ans = await ask_trading_tutor(question, context_video=v_ctx)
         await event.respond(ans, link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/search(?:\s+(.+))?$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/search(?:@\w+)?(?:\s+(.+))?$'))
     async def handle_search(event):
         query = (event.pattern_match.group(1) or "").strip()
         if not query:
@@ -1562,7 +1603,7 @@ async def main():
 
         await event.respond("\n".join(lines), link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/search_send(?:\s+(.+))?$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/search_send(?:@\w+)?(?:\s+(.+))?$'))
     async def handle_search_send(event):
         query = (event.pattern_match.group(1) or "").strip()
         if not query:
@@ -1580,7 +1621,7 @@ async def main():
         except Exception as e:
             await event.respond(f"⚠️ Forward error: {e}")
 
-    @client.on(events.NewMessage(pattern=r'^/send(?:_(\d+)|\s+(\d+))$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/send(?:_(\d+)|\s+(\d+))(?:@\w+)?$'))
     async def handle_send(event):
         mid_str = event.pattern_match.group(1) or event.pattern_match.group(2)
         if not mid_str:
@@ -1593,7 +1634,7 @@ async def main():
         except Exception as e:
             await event.respond(f"⚠️ Could not forward video {msg_id}: {e}")
 
-    @client.on(events.NewMessage(pattern=r'^/(playlist|topics)(?:\s+([a-zA-Z_]+))?$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/(playlist|topics)(?:@\w+)?(?:\s+([a-zA-Z_]+))?$'))
     async def handle_playlist(event):
         topic = (event.pattern_match.group(2) or "").strip().lower()
         if not topic:
@@ -1624,7 +1665,7 @@ async def main():
         await event.respond("\n".join(lines), link_preview=False)
 
 
-    @client.on(events.NewMessage(pattern=r'^/remind(?:_([a-zA-Z]+)|\s+([a-zA-Z]+))?$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/remind(?:_([a-zA-Z]+)|\s+([a-zA-Z]+))?(?:@\w+)?$'))
     async def handle_remind(event):
         action = event.pattern_match.group(1) or event.pattern_match.group(2)
         progress = load_progress()
@@ -1647,7 +1688,7 @@ async def main():
             save_progress(progress)
             await event.respond("🔕 **Notifications Disabled.** You can re-enable anytime with `/remind on`.")
 
-    @client.on(events.NewMessage(pattern=r'^/leach(?:_(\d+)|\s+(\d+))?$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/leach(?:_(\d+)|\s+(\d+))?(?:@\w+)?$'))
     async def handle_leach(event):
         c_str = event.pattern_match.group(1) or event.pattern_match.group(2)
         count = int(c_str) if c_str else 5
@@ -1657,7 +1698,7 @@ async def main():
         up = await leach_5_videos(client, cfg.get("today_id"))
         await event.respond(f"✅ **BOT LEACH COMPLETE:** Successfully extracted and uploaded {up} streamable trading videos into [today]({cfg.get('today_link', '')})!", link_preview=False)
 
-    @client.on(events.NewMessage(pattern=r'^/roadmap$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/roadmap(?:@\w+)?(?:\s+.*)?$'))
     async def handle_roadmap(event):
         msg = "🗺️ **8-WEEK TRADING CURRICULUM ROADMAP**\n\n"
         for w_num, w_data in CURRICULUM.items():
@@ -1666,7 +1707,7 @@ async def main():
         msg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSend `/week <1-8>` for daily breakdowns or `/today` for your active lesson!"
         await event.respond(msg)
 
-    @client.on(events.NewMessage(pattern=r'^/week(?:\s+(\d+))?$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/week(?:@\w+)?(?:\s+(\d+))?$'))
     async def handle_week(event):
         match = event.pattern_match.group(1)
         if not match or int(match) not in CURRICULUM:
@@ -1686,7 +1727,7 @@ async def main():
         msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSend `/today` to work on your current lesson!"
         await event.respond(msg)
 
-    @client.on(events.NewMessage(pattern=r'^/quiz$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/quiz(?:@\w+)?(?:\s+.*)?$'))
     async def handle_quiz(event):
         progress = load_progress()
         q_idx = progress.get("quiz_idx", 0) % len(QUIZ_QUESTIONS)
@@ -1705,7 +1746,7 @@ async def main():
         )
         await event.respond(msg)
 
-    @client.on(events.NewMessage(pattern=r'^/links$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/links(?:@\w+)?(?:\s+.*)?$'))
     async def handle_links(event):
         msg = (
             "📂 **DIRECT NON-MEGA COURSE ACCESS:**\n\n"
@@ -1719,7 +1760,7 @@ async def main():
         )
         await event.respond(msg)
 
-    @client.on(events.NewMessage(pattern=r'^/reset$'))
+    @client.on(events.NewMessage(pattern=r'(?i)^/reset(?:@\w+)?(?:\s+.*)?$'))
     async def handle_reset(event):
         today_str = date.today().isoformat()
         save_progress({
